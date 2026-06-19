@@ -1,0 +1,70 @@
+{\rtf1\ansi\deff0
+{\fonttbl{\f0 Arial;}{\f1 Courier New;}}
+\fs24
+\b Google Ads API Basic Access Design Document\b0\par
+\par
+\b Company Name:\b0 Infovibex\par
+\b Primary Website:\b0 https://infovibex.com\par
+\b Google Ads Manager Account (MCC) ID:\b0 751-072-9737\par
+\b API Contact Email:\b0 contacttoheed@gmail.com\par
+\par
+\b 1. Product and Business Overview\b0\par
+Infovibex develops internal workflow and productivity software used by distributed teams to manage tasks, communication, and planning workflows. Inside the authenticated Infovibex web application, authorized internal users can access an SEO Tools module for keyword research and search planning.\par
+\par
+The Google Ads API integration is used only to retrieve keyword planning data for internal research workflows. The tool is read-only with respect to Google Ads. It is not used to create campaigns, edit campaigns, manage budgets, manage billing, or automate account changes.\par
+\par
+\b 2. Intended Users and Access Control\b0\par
+Access to the tool is limited to internal users, including employees and approved contractors who sign in to the Infovibex application. The tool is not publicly accessible. End users do not receive direct API credentials or direct API access.\par
+\par
+Users must authenticate before using the SEO Tools keyword planner. Role-based application controls limit who can access the feature. All Google Ads API requests are made server-side after the user has been authenticated by the application backend.\par
+\par
+\b 3. Business Purpose of the Integration\b0\par
+The purpose of the integration is to help internal users research keyword opportunities for search marketing and SEO planning. Users can enter seed keywords, target country, target language, and an optional website URL. The application then requests keyword ideas and related planning metrics from Google Ads and displays them in the internal dashboard.\par
+\par
+The returned data is used by internal staff to evaluate search demand, competition, and potential keyword opportunities before making manual marketing decisions. Infovibex does not resell raw API access to third parties and does not provide a public Google Ads API product.\par
+\par
+\b 4. Supported Google Ads Capabilities\b0\par
+Supported Google Ads capability: Keyword Planning Services.\par
+Supported campaign type context: Search.\par
+Unsupported capabilities: Account Creation, Account Management, Campaign Creation, Campaign Management, Conversion Tracking, Remarketing, billing actions, and automated bidding or budget changes.\par
+\par
+\b 5. High-Level Architecture\b0\par
+{\f1 Authenticated user -> Infovibex SEO Tools UI -> Internal backend route -> OAuth 2.0 token refresh -> Google Ads API KeywordPlanIdeaService -> Results returned to internal dashboard\f0}\par
+\par
+The frontend collects keyword-planning inputs from an authenticated user session. Those inputs are sent to an internal backend endpoint. The backend validates the request, refreshes an access token using stored OAuth credentials, calls the Google Ads API, parses the response, and returns normalized keyword planning data to the internal interface.\par
+\par
+\b 6. Request Flow\b0\par
+1. An authenticated internal user opens the SEO Tools keyword planner in the Infovibex application.\par
+2. The user submits seed keywords and optional targeting filters such as country, language, and website URL.\par
+3. The backend validates the payload and confirms the user session.\par
+4. The backend refreshes an OAuth access token server-side using the stored refresh token.\par
+5. The backend sends a read-only request to the Google Ads API keyword planning service.\par
+6. The response is parsed and formatted for internal display.\par
+7. The user reviews the results in the internal dashboard and may export them as CSV for internal analysis.\par
+\par
+\b 7. Data Handling and Security\b0\par
+Google Ads developer credentials, OAuth client credentials, and refresh tokens are stored only on the server in environment variables or server-side configuration. They are never embedded in frontend code or exposed to end users.\par
+\par
+The application sends requests to Google Ads only from the backend. Access tokens are used server-side and are not shared with users. Only authenticated internal users can initiate keyword planner requests. Logging is limited to operational debugging and error handling.\par
+\par
+The system is designed to display keyword planning results directly to signed-in internal users. It is not designed to create a public searchable database of Google Ads data. Any exported CSV files are generated only on demand for internal use by authenticated users.\par
+\par
+\b 8. Google Ads API Services Used\b0\par
+The tool uses the following Google Ads API service for its current functionality:\par
+- KeywordPlanIdeaService.GenerateKeywordIdeas\par
+\par
+The tool does not currently call services for campaign mutations, ad creation, budget management, or conversion tracking.\par
+\par
+\b 9. User Interface and Tool Design\b0\par
+The internal SEO Tools interface contains a keyword planner panel where authorized users can enter seed keywords and filters. The results view shows keyword ideas and related planning metrics such as monthly searches, competition indicators, and bid estimates when available from the API response.\par
+\par
+The interface is designed for internal research and planning, not for direct campaign execution. Users review the generated keyword ideas manually and use the results as input into later marketing decisions performed separately in Google Ads.\par
+\par
+\b 10. Compliance Position\b0\par
+Infovibex is requesting Google Ads API access for a low-volume, internal, read-only keyword planning workflow. The tool is intended to support internal business operations and research. It does not provide public API access, does not delegate Google Ads API access to unauthenticated users, and does not use the API to perform prohibited or undisclosed automation.\par
+\par
+The company will keep the API contact email up to date and respond promptly to communications from the Google Ads API review team.\par
+\par
+\b 11. Additional Notes for Review\b0\par
+If requested, Infovibex can provide screenshots of the authenticated SEO Tools interface and additional implementation details about request validation, authentication controls, and server-side credential handling.\par
+}

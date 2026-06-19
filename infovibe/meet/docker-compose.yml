@@ -1,0 +1,50 @@
+services:
+  app:
+    build:
+      context: .
+    restart: unless-stopped
+    depends_on:
+      - livekit
+    ports:
+      - "${PORT:-3100}:3100"
+    environment:
+      PORT: ${PORT:-3100}
+      LIVEKIT_URL: ${LIVEKIT_URL:-}
+      LIVEKIT_SIGNAL_PORT: ${LIVEKIT_SIGNAL_PORT:-7880}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-infovibex_meet_local}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-infovibex_meet_local_secret_2026_04_01}
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+
+  livekit:
+    image: livekit/livekit-server:latest
+    restart: unless-stopped
+    depends_on:
+      - redis
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "50000-50050:50000-50050/udp"
+    environment:
+      LIVEKIT_CONFIG: |
+        port: 7880
+        log_level: info
+        rtc:
+          tcp_port: 7881
+          port_range_start: 50000
+          port_range_end: 50050
+          use_external_ip: true
+          node_ip: 182.180.90.116
+        redis:
+          address: redis:6379
+        keys:
+          infovibex_meet_local: infovibex_meet_local_secret_2026_04_01

@@ -1,0 +1,134 @@
+name: Build Windows
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'infovibe/desktop/**'
+  workflow_dispatch:
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: infovibe/desktop
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Extract version
+        id: version
+        shell: pwsh
+        run: |
+          $content = Get-Content -Path "lib/main.dart" -Raw
+          if ($content -match "kAppVersion\s*=\s*'([\d.]+)'") {
+            $ver = $Matches[1]
+            echo "version=$ver" >> $env:GITHUB_OUTPUT
+          } else {
+            throw "Could not extract version from main.dart"
+          }
+
+      - name: Build Windows release
+        run: flutter build windows --release
+
+      - name: Package portable ZIP
+        shell: pwsh
+        run: |
+          $ver = "${{ steps.version.outputs.version }}"
+          Compress-Archive -Path build/windows/x64/runner/Release/* `
+            -DestinationPath "build/windows/x64/runner/Release/workplace-manager_${ver}_portable.zip"
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $ver = "${{ steps.version.outputs.version }}"
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            $iscc = "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
+          }
+          & $iscc "windows/installer/setup.iss" /dMyAppVersion=$ver
+
+      - name: Rename installer
+        shell: pwsh
+        run: |
+          $ver = "${{ steps.version.outputs.version }}"
+          $outDir = "build/windows/x64/runner/Release"
+          Move-Item "$outDir/workplace-manager-setup.exe" `
+            "$outDir/workplace-manager_${ver}_setup.exe" -Force
+
+      - name: Upload portable ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: workplace-manager-windows-portable
+          path: infovibe/desktop/build/windows/x64/runner/Release/workplace-manager_*_portable.zip
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: workplace-manager-windows-setup
+          path: infovibe/desktop/build/windows/x64/runner/Release/workplace-manager_*_setup.exe
+
+      - name: Upload to server
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        shell: pwsh
+        env:
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+        run: |
+          $ver = "${{ steps.version.outputs.version }}"
+          $exeName = "workplace-manager_${ver}_setup.exe"
+          $zipName = "workplace-manager_${ver}_portable.zip"
+          $exePath = "build/windows/x64/runner/Release/$exeName"
+          $zipPath = "build/windows/x64/runner/Release/$zipName"
+
+          $sshDir = "$env:USERPROFILE\.ssh"
+          mkdir $sshDir -Force | Out-Null
+          $keyPath = "$sshDir\id_ed25519"
+          [System.IO.File]::WriteAllText($keyPath, $env:SSH_KEY)
+          & icacls $keyPath /inheritance:r /grant "${env:USERNAME}:F"
+
+          scp -o StrictHostKeyChecking=no -i $keyPath $exePath `
+            "${SERVER_USER}@${SERVER_HOST}:/var/www/infovibex.com/downloads/windows/"
+          scp -o StrictHostKeyChecking=no -i $keyPath $zipPath `
+            "${SERVER_USER}@${SERVER_HOST}:/var/www/infovibex.com/downloads/windows/"
+
+          $vjson = @"
+      {
+        \"version\": \"$ver\",
+        \"build\": 19,
+        \"releaseDate\": \"2026-06-19\",
+        \"downloads\": {
+          \"linux\": {
+            \"deb\": \"https://infovibex.com/downloads/linux/workplace-manager_${ver}_amd64.deb\",
+            \"tar\": \"https://infovibex.com/downloads/linux/workplace-manager_${ver}_portable.tar.gz\"
+          },
+          \"windows\": {
+            \"exe\": \"https://infovibex.com/downloads/windows/${exeName}\",
+            \"zip\": \"https://infovibex.com/downloads/windows/${zipName}\"
+          }
+        },
+        \"changelog\": \"Windows build v$ver\"
+      }
+"@
+          ssh -o StrictHostKeyChecking=no -i $keyPath "${SERVER_USER}@${SERVER_HOST}" `
+            "cat > /var/www/infovibex.com/version.json << 'VJSON'
+$vjson
+VJSON"

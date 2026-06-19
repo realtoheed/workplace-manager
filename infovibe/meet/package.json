@@ -1,0 +1,21 @@
+{
+  "name": "infovibex-meet-local",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Standalone custom InfoVibeX meeting app",
+  "main": "server.js",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js",
+    "start:app": "node server.js",
+    "start:livekit": "node scripts/run-livekit.js",
+    "start:native": "node scripts/start-native-stack.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "livekit-client": "^2.18.0",
+    "livekit-server-sdk": "^2.15.0",
+    "mongodb": "^6.13.0",
+    "socket.io": "^4.8.1"
+  }
+}

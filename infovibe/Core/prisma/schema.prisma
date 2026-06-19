@@ -1,0 +1,216 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  employee
+  team_lead
+  hr
+  super_admin
+}
+
+enum LeaveType {
+  sick
+  casual
+  annual
+}
+
+enum ReviewStatus {
+  pending
+  approved
+  rejected
+}
+
+enum MeetingType {
+  persistent
+  temporary
+}
+
+enum MeetingStatus {
+  active
+  ended
+}
+
+enum AttendanceStatus {
+  present
+  absent
+  late
+  half_day
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  password      String
+  name          String
+  role          Role      @default(employee)
+  designation   String?
+  salary        Float?
+  hireDate      DateTime?
+  isActive      Boolean   @default(true)
+  workStartTime String?
+  workEndTime   String?
+
+  departmentId  String?
+  department    Department? @relation("DepartmentMembers", fields: [departmentId], references: [id], map: "fk_user_department")
+  defaultRoomId String?
+  defaultRoom   BreakoutRoom? @relation("UserDefaultRoom", fields: [defaultRoomId], references: [id], map: "fk_user_default_room")
+
+  hostedMeetings      Meeting[]           @relation("MeetingHost")
+  participants        MeetingParticipant[]
+  leaveRequests       LeaveRequest[]
+  attendanceRecords   AttendanceRecord[]
+  salaryRecords       SalaryRecord[]
+  salaryChangesMade   SalaryChange[]      @relation("SalaryChangeAuthor")
+  salaryChanges       SalaryChange[]      @relation("SalaryChangeTarget")
+  managedDepartment   Department?         @relation("DepartmentHead")
+  breakoutParticipations BreakoutParticipant[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Department {
+  id      String  @id @default(cuid())
+  name    String  @unique
+  headId  String? @unique
+  head    User?   @relation("DepartmentHead", fields: [headId], references: [id], map: "fk_department_head")
+
+  members User[]  @relation("DepartmentMembers")
+
+  createdAt DateTime @default(now())
+}
+
+model Meeting {
+  id          String       @id @default(cuid())
+  title       String
+  type        MeetingType  @default(persistent)
+  roomName    String       @unique
+  isActive    Boolean      @default(true)
+
+  hostId      String?
+  host        User?        @relation("MeetingHost", fields: [hostId], references: [id], map: "fk_meeting_host")
+  scheduledAt DateTime?
+  expiresAt   DateTime?
+
+  status       MeetingStatus @default(active)
+  recordingUrl String?
+
+  participants  MeetingParticipant[]
+  breakoutRooms BreakoutRoom[]
+
+  createdAt DateTime @default(now())
+}
+
+model MeetingParticipant {
+  id                 String   @id @default(cuid())
+  meetingId          String
+  meeting            Meeting  @relation(fields: [meetingId], references: [id], map: "fk_mp_meeting")
+  userId             String
+  user               User     @relation(fields: [userId], references: [id], map: "fk_mp_user")
+  joinedAt           DateTime?
+  leftAt             DateTime?
+  durationSeconds    Int      @default(0)
+  screenshareSeconds Int      @default(0)
+  sessionLog         Json?
+
+  @@unique([meetingId, userId], map: "uq_mp_meeting_user")
+}
+
+model BreakoutRoom {
+  id         String  @id @default(cuid())
+  meetingId  String
+  meeting    Meeting @relation(fields: [meetingId], references: [id], map: "fk_br_meeting")
+  name       String
+  isActive   Boolean @default(true)
+
+  defaultFor   User[]               @relation("UserDefaultRoom")
+  participants BreakoutParticipant[]
+
+  createdAt DateTime @default(now())
+}
+
+model BreakoutParticipant {
+  id             String       @id @default(cuid())
+  breakoutRoomId String
+  breakoutRoom   BreakoutRoom @relation(fields: [breakoutRoomId], references: [id], map: "fk_bp_room")
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], map: "fk_bp_user")
+  joinedAt       DateTime?
+  leftAt         DateTime?
+
+  @@unique([breakoutRoomId, userId], map: "uq_bp_room_user")
+}
+
+model LeaveRequest {
+  id        String       @id @default(cuid())
+  userId    String
+  user      User         @relation(fields: [userId], references: [id], map: "fk_lr_user")
+  leaveType LeaveType
+  startDate DateTime
+  endDate   DateTime
+  reason    String
+
+  tlStatus  ReviewStatus @default(pending)
+  tlComment String?
+  tlActedAt DateTime?
+
+  hrStatus  ReviewStatus @default(pending)
+  hrComment String?
+  hrActedAt DateTime?
+
+  finalStatus ReviewStatus @default(pending)
+
+  createdAt DateTime @default(now())
+}
+
+model AttendanceRecord {
+  id                 String           @id @default(cuid())
+  userId             String
+  user               User             @relation(fields: [userId], references: [id], map: "fk_ar_user")
+  date               DateTime
+  firstJoinAt        DateTime?
+  lastLeaveAt        DateTime?
+  totalWorkMinutes   Int              @default(0)
+  breakMinutes       Int              @default(0)
+  screenshareMinutes Int              @default(0)
+  lateMinutes        Int              @default(0)
+  status             AttendanceStatus @default(absent)
+  salaryDeduction    Float?
+
+  @@unique([userId, date], map: "uq_ar_user_date")
+}
+
+model SalaryRecord {
+  id            String @id @default(cuid())
+  userId        String
+  user          User   @relation(fields: [userId], references: [id], map: "fk_sr_user")
+  month         Int
+  year          Int
+  monthlySalary Float
+  absentDays    Int    @default(0)
+  deductions    Float  @default(0)
+  netSalary     Float
+  status        String @default("pending")
+
+  @@unique([userId, month, year], map: "uq_sr_user_month")
+}
+
+model SalaryChange {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation("SalaryChangeTarget", fields: [userId], references: [id], map: "fk_sc_user")
+  oldSalary     Float
+  newSalary     Float
+  reason        String
+  changedById   String
+  changedBy     User     @relation("SalaryChangeAuthor", fields: [changedById], references: [id], map: "fk_sc_changed_by")
+  effectiveFrom DateTime
+
+  createdAt DateTime @default(now())
+}
