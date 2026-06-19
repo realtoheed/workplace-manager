@@ -39,18 +39,46 @@ jobs:
         working-directory: infovibe/desktop
         run: flutter pub get
 
-      - name: Replace plugin symlinks with real dirs
+      - name: Pre-extract libwebrtc and patch CMakeLists.txt
         working-directory: infovibe/desktop
         shell: pwsh
         run: |
-          $symlinksDir = "windows\flutter\ephemeral\.plugin_symlinks"
-          if (Test-Path $symlinksDir) {
-            Get-ChildItem -Path $symlinksDir | Where-Object { $_.LinkType -eq "SymbolicLink" } | ForEach-Object {
-              $target = $_.Target
-              if ($target) {
-                Remove-Item $_.FullName -Force -Recurse
-                Copy-Item -Path $target -Destination $_.FullName -Recurse -Force
-                Write-Host "Replaced symlink $($_.Name) -> $target"
+          $webrtcSymlink = "windows\flutter\ephemeral\.plugin_symlinks\flutter_webrtc"
+          if (Test-Path $webrtcSymlink) {
+            $target = (Get-Item $webrtcSymlink).Target
+            if (-not $target) { Write-Host "Not a symlink, using direct path"; $target = $webrtcSymlink }
+            Write-Host "flutter_webrtc real path: $target"
+            
+            $dlDir = "$target\third_party\downloads"
+            $zipPath = "$dlDir\libwebrtc.zip"
+            
+            # Download libwebrtc.zip if not present
+            if (-not (Test-Path $zipPath)) {
+              $zipUrl = "https://github.com/flutter-webrtc/flutter-webrtc/releases/download/v1.4.0/libwebrtc.zip"
+              Write-Host "Downloading $zipUrl ..."
+              New-Item -ItemType Directory -Path $dlDir -Force | Out-Null
+              Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath -UseBasicParsing
+            }
+            
+            # Pre-extract to real path
+            $extractDir = "$dlDir\libwebrtc"
+            if (-not (Test-Path $extractDir)) {
+              Write-Host "Extracting libwebrtc.zip ..."
+              Expand-Archive -Path $zipPath -DestinationPath $dlDir -Force
+              Write-Host "Extracted to $dlDir"
+            }
+            
+            # Patch CMakeLists.txt to skip extraction if already extracted
+            $cmakeFile = "$target\third_party\CMakeLists.txt"
+            if (Test-Path $cmakeFile) {
+              $content = Get-Content $cmakeFile -Raw
+              if ($content -match 'file\(ARCHIVE_EXTRACT') {
+                $patched = $content -replace 'file\(ARCHIVE_EXTRACT INPUT \$\{downloads_dir\}/libwebrtc\.zip DESTINATION \$\{downloads_dir\}\)',
+                  'if(NOT EXISTS ${downloads_dir}/libwebrtc/)' + "`n" +
+                  '  file(ARCHIVE_EXTRACT INPUT ${downloads_dir}/libwebrtc.zip DESTINATION ${downloads_dir})' + "`n" +
+                  'endif()'
+                Set-Content -Path $cmakeFile -Value $patched -Encoding UTF8
+                Write-Host "Patched CMakeLists.txt with extraction guard"
               }
             }
           }
