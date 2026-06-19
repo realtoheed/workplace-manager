@@ -110,25 +110,22 @@ jobs:
           scp -o StrictHostKeyChecking=no -i $keyPath $zipPath `
             "${SERVER_USER}@${SERVER_HOST}:/var/www/infovibex.com/downloads/windows/"
 
-          $vjson = @"
-      {
-        \"version\": \"$ver\",
-        \"build\": 19,
-        \"releaseDate\": \"2026-06-19\",
-        \"downloads\": {
-          \"linux\": {
-            \"deb\": \"https://infovibex.com/downloads/linux/workplace-manager_${ver}_amd64.deb\",
-            \"tar\": \"https://infovibex.com/downloads/linux/workplace-manager_${ver}_portable.tar.gz\"
-          },
-          \"windows\": {
-            \"exe\": \"https://infovibex.com/downloads/windows/${exeName}\",
-            \"zip\": \"https://infovibex.com/downloads/windows/${zipName}\"
-          }
-        },
-        \"changelog\": \"Windows build v$ver\"
-      }
-"@
-          ssh -o StrictHostKeyChecking=no -i $keyPath "${SERVER_USER}@${SERVER_HOST}" `
-            "cat > /var/www/infovibex.com/version.json << 'VJSON'
-$vjson
-VJSON"
+          $vjson = @{
+            version = $ver
+            build = 19
+            releaseDate = "2026-06-19"
+            downloads = @{
+              linux = @{
+                deb = "https://infovibex.com/downloads/linux/workplace-manager_${ver}_amd64.deb"
+                tar = "https://infovibex.com/downloads/linux/workplace-manager_${ver}_portable.tar.gz"
+              }
+              windows = @{
+                exe = "https://infovibex.com/downloads/windows/workplace-manager_${ver}_setup.exe"
+                zip = "https://infovibex.com/downloads/windows/workplace-manager_${ver}_portable.zip"
+              }
+            }
+            changelog = "Windows build v$ver"
+          } | ConvertTo-Json -Compress
+          $vjsonPath = "$env:TEMP\version.json"
+          Set-Content -Path $vjsonPath -Value $vjson -Encoding UTF8
+          scp -o StrictHostKeyChecking=no -i $keyPath $vjsonPath "${SERVER_USER}@${SERVER_HOST}:/var/www/infovibex.com/version.json"
