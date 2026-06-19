@@ -5,6 +5,7 @@ on:
     branches: [main, master]
     paths:
       - 'infovibe/desktop/**'
+      - '.github/workflows/**'
   workflow_dispatch:
 
 env:
