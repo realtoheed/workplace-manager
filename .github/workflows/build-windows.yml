@@ -39,6 +39,22 @@ jobs:
         working-directory: infovibe/desktop
         run: flutter pub get
 
+      - name: Replace plugin symlinks with real dirs
+        working-directory: infovibe/desktop
+        shell: pwsh
+        run: |
+          $symlinksDir = "windows\flutter\ephemeral\.plugin_symlinks"
+          if (Test-Path $symlinksDir) {
+            Get-ChildItem -Path $symlinksDir | Where-Object { $_.LinkType -eq "SymbolicLink" } | ForEach-Object {
+              $target = $_.Target
+              if ($target) {
+                Remove-Item $_.FullName -Force -Recurse
+                Copy-Item -Path $target -Destination $_.FullName -Recurse -Force
+                Write-Host "Replaced symlink $($_.Name) -> $target"
+              }
+            }
+          }
+
       - name: Extract version
         working-directory: infovibe/desktop
         id: version
