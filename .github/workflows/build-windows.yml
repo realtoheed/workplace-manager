@@ -52,7 +52,6 @@ jobs:
             $dlDir = "$target\third_party\downloads"
             $zipPath = "$dlDir\libwebrtc.zip"
             
-            # Download libwebrtc.zip if not present
             if (-not (Test-Path $zipPath)) {
               $zipUrl = "https://github.com/flutter-webrtc/flutter-webrtc/releases/download/v1.4.0/libwebrtc.zip"
               Write-Host "Downloading $zipUrl ..."
@@ -60,7 +59,6 @@ jobs:
               Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath -UseBasicParsing
             }
             
-            # Pre-extract to real path
             $extractDir = "$dlDir\libwebrtc"
             if (-not (Test-Path $extractDir)) {
               Write-Host "Extracting libwebrtc.zip ..."
@@ -68,18 +66,23 @@ jobs:
               Write-Host "Extracted to $dlDir"
             }
             
-            # Patch CMakeLists.txt to skip extraction if already extracted
             $cmakeFile = "$target\third_party\CMakeLists.txt"
             if (Test-Path $cmakeFile) {
               $content = Get-Content $cmakeFile -Raw
               if ($content -match 'file\(ARCHIVE_EXTRACT') {
-                $patched = $content -replace 'file\(ARCHIVE_EXTRACT INPUT \$\{downloads_dir\}/libwebrtc\.zip DESTINATION \$\{downloads_dir\}\)',
-                  'if(NOT EXISTS ${downloads_dir}/libwebrtc/)' + "`n" +
-                  '  file(ARCHIVE_EXTRACT INPUT ${downloads_dir}/libwebrtc.zip DESTINATION ${downloads_dir})' + "`n" +
-                  'endif()'
+                $oldCmd = 'file(ARCHIVE_EXTRACT INPUT ${downloads_dir}/libwebrtc.zip DESTINATION ${downloads_dir})'
+                $guardIf = 'if(NOT EXISTS ${downloads_dir}/libwebrtc/)'
+                $newCmd = "  " + $oldCmd
+                $guardEndif = 'endif()'
+                $replacement = $guardIf + "`n" + $newCmd + "`n" + $guardEndif
+                $patched = $content -replace [regex]::Escape($oldCmd), $replacement
                 Set-Content -Path $cmakeFile -Value $patched -Encoding UTF8
                 Write-Host "Patched CMakeLists.txt with extraction guard"
+              } else {
+                Write-Host "ARCHIVE_EXTRACT not found in CMakeLists.txt"
               }
+            } else {
+              Write-Host "CMakeLists.txt not found at $cmakeFile"
             }
           }
 
