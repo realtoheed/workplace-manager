@@ -14,9 +14,6 @@ env:
 jobs:
   build:
     runs-on: windows-latest
-    defaults:
-      run:
-        working-directory: infovibe/desktop
 
     steps:
       - name: Enable Git symlinks (Windows)
@@ -39,9 +36,11 @@ jobs:
           cache: true
 
       - name: Get dependencies
+        working-directory: infovibe/desktop
         run: flutter pub get
 
       - name: Extract version
+        working-directory: infovibe/desktop
         id: version
         shell: pwsh
         run: |
@@ -54,9 +53,11 @@ jobs:
           }
 
       - name: Build Windows release
+        working-directory: infovibe/desktop
         run: flutter build windows --release
 
       - name: Package portable ZIP
+        working-directory: infovibe/desktop
         shell: pwsh
         run: |
           $ver = "${{ steps.version.outputs.version }}"
@@ -68,6 +69,7 @@ jobs:
         run: choco install innosetup --no-progress -y
 
       - name: Build installer
+        working-directory: infovibe/desktop
         shell: pwsh
         run: |
           $ver = "${{ steps.version.outputs.version }}"
@@ -78,6 +80,7 @@ jobs:
           & $iscc "windows/installer/setup.iss" /dMyAppVersion=$ver
 
       - name: Rename installer
+        working-directory: infovibe/desktop
         shell: pwsh
         run: |
           $ver = "${{ steps.version.outputs.version }}"
@@ -98,6 +101,7 @@ jobs:
           path: infovibe/desktop/build/windows/x64/runner/Release/workplace-manager_*_setup.exe
 
       - name: Upload to server
+        working-directory: infovibe/desktop
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         shell: pwsh
         env:
