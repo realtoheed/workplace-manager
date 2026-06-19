@@ -19,7 +19,18 @@ jobs:
         working-directory: infovibe/desktop
 
     steps:
+      - name: Enable Git symlinks (Windows)
+        run: git config --global core.symlinks true
+
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Fix symlinks for Windows
+        shell: pwsh
+        run: |
+          git config core.symlinks true
+          git checkout -f HEAD
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
