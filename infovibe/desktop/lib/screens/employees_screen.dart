@@ -69,7 +69,7 @@ class _EmployeesScreenState extends State<EmployeesScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Name', errorText: nameCtrl.text.isEmpty ? null : null)),
+                  TextField(controller: nameCtrl, decoration: InputDecoration(labelText: 'Name')),
                   const SizedBox(height: 12),
                   TextField(controller: emailCtrl, decoration: const InputDecoration(labelText: 'Email'), enabled: existing == null),
                   const SizedBox(height: 12),

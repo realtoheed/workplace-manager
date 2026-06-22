@@ -138,6 +138,7 @@ class _DashboardLayoutState extends State<DashboardLayout> {
           const PermanentMeetingButton(),
         ],
       ),
+    ),
     );
   }
 }

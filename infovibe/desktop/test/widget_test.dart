@@ -161,10 +161,10 @@ void main() {
 
     test('Participant.fromJson parses correctly', () {
       final p = Participant.fromJson({
-        'id': 'p1', 'name': 'John', 'isHost': false,
+        'id': 'p1', 'name': 'John', 'is_client': false,
       });
       expect(p.name, 'John');
-      expect(p.isHost, false);
+      expect(p.isClient, false);
     });
 
     test('BreakoutRoom.fromJson parses correctly', () {

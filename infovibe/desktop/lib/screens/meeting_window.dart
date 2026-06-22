@@ -119,20 +119,20 @@ class _MeetingWindowState extends State<MeetingWindow> with TickerProviderStateM
       });
     }));
     _socketCleanups.add(_socket.on('chat-message', _receiveChatMessage));
-    _socketCleanups.add(_socket.on('participant-joined', (_) {
+    _socketCleanups.add(_socket.on('participant-joined', (data) {
       _softRefresh();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('${_ is Map ? _['name'] ?? 'Someone' : 'Someone'} joined'),
+          content: Text('${data is Map ? data['name'] ?? 'Someone' : 'Someone'} joined'),
           duration: const Duration(seconds: 2),
         ));
       }
     }));
-    _socketCleanups.add(_socket.on('participant-left', (_) {
+    _socketCleanups.add(_socket.on('participant-left', (data) {
       _softRefresh();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('${_ is Map ? _['name'] ?? 'Someone' : 'Someone'} left'),
+          content: Text('${data is Map ? data['name'] ?? 'Someone' : 'Someone'} left'),
           duration: const Duration(seconds: 2),
         ));
       }

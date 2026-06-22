@@ -47,6 +47,19 @@ jobs:
       - name: Get dependencies
         run: flutter pub get
 
+      - name: Replace plugin symlinks with junctions
+        shell: pwsh
+        run: |
+          $path = "windows\flutter\ephemeral\.plugin_symlinks\flutter_webrtc"
+          $item = Get-Item $path -ErrorAction SilentlyContinue
+          if ($item -and $item.LinkType) {
+            $target = $item.Target
+            $fullPath = $item.FullName
+            Remove-Item $path -Force -Recurse
+            cmd /c "mklink /J `"$fullPath`" `"$target`"" | Out-Null
+            Write-Host "Replaced $($item.LinkType) with junction"
+          }
+
       - name: Build Windows release
         run: flutter build windows --release
 
