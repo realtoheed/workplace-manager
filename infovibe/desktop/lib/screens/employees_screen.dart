@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../api/client.dart';
@@ -16,8 +17,10 @@ class _EmployeesScreenState extends State<EmployeesScreen> {
   List<User> _users = [];
   List<Department> _departments = [];
   bool _loading = true;
+  bool _saving = false;
   int _page = 0;
   final _searchCtrl = TextEditingController();
+  Timer? _searchDebounce;
 
   @override
   void initState() {
@@ -34,7 +37,8 @@ class _EmployeesScreenState extends State<EmployeesScreen> {
         _departments = (deptData['departments'] as List?)?.map((e) => Department.fromJson(e)).toList() ?? [];
         _loading = false;
       });
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[Employees] Failed to load: $e');
       setState(() => _loading = false);
     }
   }
@@ -43,64 +47,88 @@ class _EmployeesScreenState extends State<EmployeesScreen> {
     final nameCtrl = TextEditingController(text: existing?.name ?? '');
     final emailCtrl = TextEditingController(text: existing?.email ?? '');
     final passCtrl = TextEditingController();
+    final auth = context.read<AuthProvider>();
     String role = existing?.role ?? 'employee';
     String? deptId = existing?.departmentId;
 
+    final allowedRoles = <String>['employee', 'team_lead'];
+    if (auth.currentUser?.role == 'super_admin') {
+      allowedRoles.addAll(['hr', 'super_admin']);
+    } else if (auth.currentUser?.role == 'hr') {
+      allowedRoles.add('hr');
+    }
+
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(existing != null ? 'Edit Employee' : 'Add Employee'),
-        content: SizedBox(
-          width: 400,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Name')),
-                const SizedBox(height: 12),
-                TextField(controller: emailCtrl, decoration: const InputDecoration(labelText: 'Email'), enabled: existing == null),
-                const SizedBox(height: 12),
-                if (existing == null) TextField(controller: passCtrl, decoration: const InputDecoration(labelText: 'Password'), obscureText: true),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  value: role,
-                  decoration: const InputDecoration(labelText: 'Role'),
-                  items: ['employee', 'team_lead', 'hr', 'super_admin'].map((r) => DropdownMenuItem(value: r, child: Text(r))).toList(),
-                  onChanged: (v) => role = v ?? 'employee',
-                ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String?>(
-                  value: deptId,
-                  decoration: const InputDecoration(labelText: 'Department'),
-                  items: [const DropdownMenuItem(value: null, child: Text('None')), ..._departments.map((d) => DropdownMenuItem(value: d.id, child: Text(d.name)))],
-                  onChanged: (v) => deptId = v,
-                ),
-              ],
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Text(existing != null ? 'Edit Employee' : 'Add Employee'),
+          content: SizedBox(
+            width: 400,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Name', errorText: nameCtrl.text.isEmpty ? null : null)),
+                  const SizedBox(height: 12),
+                  TextField(controller: emailCtrl, decoration: const InputDecoration(labelText: 'Email'), enabled: existing == null),
+                  const SizedBox(height: 12),
+                  if (existing == null) TextField(controller: passCtrl, decoration: const InputDecoration(labelText: 'Password'), obscureText: true),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: allowedRoles.contains(role) ? role : allowedRoles.first,
+                    decoration: const InputDecoration(labelText: 'Role'),
+                    items: allowedRoles.map((r) => DropdownMenuItem(value: r, child: Text(r))).toList(),
+                    onChanged: (v) => role = v ?? allowedRoles.first,
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String?>(
+                    value: deptId,
+                    decoration: const InputDecoration(labelText: 'Department'),
+                    items: [const DropdownMenuItem(value: null, child: Text('None')), ..._departments.map((d) => DropdownMenuItem(value: d.id, child: Text(d.name)))],
+                    onChanged: (v) => deptId = v,
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () async {
-              try {
-                if (existing != null) {
-                  await _api.patch('/users/${existing.id}', body: {'role': role, 'departmentId': deptId});
-                } else {
-                  await _api.post('/users', body: {
-                    'name': nameCtrl.text, 'email': emailCtrl.text, 'password': passCtrl.text,
-                    'role': role, 'departmentId': deptId,
-                  });
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: _saving ? null : () async {
+                if (existing == null && nameCtrl.text.trim().isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Name is required')));
+                  return;
                 }
-                Navigator.pop(ctx);
-                _load();
-              } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
-              }
-            },
-            child: Text(existing != null ? 'Update' : 'Create'),
-          ),
-        ],
+                if (existing == null && emailCtrl.text.trim().isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Email is required')));
+                  return;
+                }
+                setDialogState(() => _saving = true);
+                try {
+                  if (existing != null) {
+                    await _api.patch('/users/${existing.id}', body: {'role': role, 'departmentId': deptId});
+                  } else {
+                    await _api.post('/users', body: {
+                      'name': nameCtrl.text, 'email': emailCtrl.text, 'password': passCtrl.text,
+                      'role': role, 'departmentId': deptId,
+                    });
+                  }
+                  Navigator.pop(ctx);
+                  _load();
+                } catch (e) {
+                  setDialogState(() => _saving = false);
+                  if (ctx.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+                  }
+                }
+              },
+              child: _saving
+                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                  : Text(existing != null ? 'Update' : 'Create'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -134,6 +162,7 @@ class _EmployeesScreenState extends State<EmployeesScreen> {
   @override
   void dispose() {
     _searchCtrl.dispose();
+    _searchDebounce?.cancel();
     super.dispose();
   }
 
@@ -161,14 +190,33 @@ class _EmployeesScreenState extends State<EmployeesScreen> {
           child: TextField(
             controller: _searchCtrl,
             decoration: const InputDecoration(labelText: 'Search', hintText: 'Name or email', prefixIcon: Icon(Icons.search, size: 20)),
-            onChanged: (_) => setState(() => _page = 0),
+            onChanged: (_) {
+              _searchDebounce?.cancel();
+              _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+                if (mounted) setState(() => _page = 0);
+              });
+            },
           ),
         ),
         const SizedBox(height: 12),
         Expanded(
           child: pageData.isEmpty
-            ? Center(child: Text('No employees', style: Theme.of(context).textTheme.bodyLarge))
+            ? Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.people_outline, size: 48, color: Colors.grey[400]),
+                    const SizedBox(height: 8),
+                    Text(_searchCtrl.text.isEmpty ? 'No employees' : 'No employees match your search', style: Theme.of(context).textTheme.bodyLarge),
+                    if (auth.currentUser?.canManageUsers == true) ...[
+                      const SizedBox(height: 12),
+                      ElevatedButton.icon(onPressed: () => _showUserModal(), icon: const Icon(Icons.add, size: 16), label: const Text('Add Employee')),
+                    ],
+                  ],
+                ),
+              )
             : SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
                 child: DataTable(
                   columnSpacing: 16,
                   columns: const [

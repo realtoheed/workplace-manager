@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../api/client.dart';
@@ -34,7 +35,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
       Map<String, dynamic> data;
       if (user?.isAdmin == true || user?.isTeamLead == true) {
-        data = await _api.get('/attendance/report', query: {...query, 'userId': user!.id});
+        data = await _api.get('/attendance/report', query: query);
       } else {
         data = await _api.get('/attendance/my', query: query);
       }
@@ -42,9 +43,15 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         _records = (data['records'] as List?)?.map((e) => AttendanceRecord.fromJson(e)).toList() ?? [];
         _loading = false;
       });
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[Attendance] Failed to load: $e');
       setState(() => _loading = false);
     }
+  }
+
+  String _safeSubstring(String? s, int start, int end) {
+    if (s == null || s.length < end) return s ?? '-';
+    return s.substring(start, end);
   }
 
   @override
@@ -67,9 +74,41 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         const SizedBox(height: 12),
         Row(
           children: [
-            SizedBox(width: 160, child: TextField(controller: _fromCtrl, decoration: const InputDecoration(labelText: 'From', hintText: 'YYYY-MM-DD'))),
+            SizedBox(
+              width: 160,
+              child: TextField(
+                controller: _fromCtrl,
+                decoration: const InputDecoration(labelText: 'From', hintText: 'YYYY-MM-DD', suffixIcon: Icon(Icons.calendar_today, size: 16)),
+                readOnly: true,
+                onTap: () async {
+                  final date = await showDatePicker(
+                    context: context,
+                    initialDate: DateTime.tryParse(_fromCtrl.text) ?? DateTime.now().subtract(const Duration(days: 30)),
+                    firstDate: DateTime(2020),
+                    lastDate: DateTime.now(),
+                  );
+                  if (date != null) _fromCtrl.text = _safeSubstring(date.toIso8601String(), 0, 10);
+                },
+              ),
+            ),
             const SizedBox(width: 12),
-            SizedBox(width: 160, child: TextField(controller: _toCtrl, decoration: const InputDecoration(labelText: 'To', hintText: 'YYYY-MM-DD'))),
+            SizedBox(
+              width: 160,
+              child: TextField(
+                controller: _toCtrl,
+                decoration: const InputDecoration(labelText: 'To', hintText: 'YYYY-MM-DD', suffixIcon: Icon(Icons.calendar_today, size: 16)),
+                readOnly: true,
+                onTap: () async {
+                  final date = await showDatePicker(
+                    context: context,
+                    initialDate: DateTime.tryParse(_toCtrl.text) ?? DateTime.now(),
+                    firstDate: DateTime(2020),
+                    lastDate: DateTime.now(),
+                  );
+                  if (date != null) _toCtrl.text = _safeSubstring(date.toIso8601String(), 0, 10);
+                },
+              ),
+            ),
             const SizedBox(width: 12),
             ElevatedButton(onPressed: () { setState(() => _page = 0); _load(); }, child: const Text('Filter')),
           ],
@@ -91,6 +130,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           child: pageData.isEmpty
             ? Center(child: Text('No records', style: Theme.of(context).textTheme.bodyLarge))
             : SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
                 child: DataTable(
                   columnSpacing: 16,
                   columns: [
@@ -105,9 +145,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                   ],
                   rows: pageData.map((r) => DataRow(cells: [
                     if (r.userName != null) DataCell(Text(r.userName!, style: Theme.of(context).textTheme.bodyMedium)),
-                    DataCell(Text(r.date.substring(0, 10), style: Theme.of(context).textTheme.bodyMedium)),
-                    DataCell(Text(r.firstJoinAt?.substring(11, 19) ?? '-', style: Theme.of(context).textTheme.bodySmall)),
-                    DataCell(Text(r.lastLeaveAt?.substring(11, 19) ?? '-', style: Theme.of(context).textTheme.bodySmall)),
+                    DataCell(Text(_safeSubstring(r.date, 0, 10), style: Theme.of(context).textTheme.bodyMedium)),
+                    DataCell(Text(_safeSubstring(r.firstJoinAt, 11, 19), style: Theme.of(context).textTheme.bodySmall)),
+                    DataCell(Text(_safeSubstring(r.lastLeaveAt, 11, 19), style: Theme.of(context).textTheme.bodySmall)),
                     DataCell(Text('${r.totalWorkMinutes}m', style: Theme.of(context).textTheme.bodyMedium)),
                     DataCell(Text('${r.breakMinutes}m', style: Theme.of(context).textTheme.bodyMedium)),
                     DataCell(Text('${r.screenshareMinutes}m', style: Theme.of(context).textTheme.bodyMedium)),
@@ -128,8 +168,36 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
               ],
             ),
           ),
+        if (_records.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: ElevatedButton.icon(
+              onPressed: () => _exportCsv(),
+              icon: const Icon(Icons.download, size: 16),
+              label: const Text('Export CSV'),
+            ),
+          ),
       ],
     );
+  }
+
+  void _exportCsv() {
+    try {
+      final file = File('${Directory.current.path}/attendance_export.csv');
+      final buffer = StringBuffer();
+      buffer.writeln('Date,Join,Leave,Work,Break,Screen,Status');
+      for (final r in _records) {
+        buffer.writeln('${_safeSubstring(r.date, 0, 10)},${_safeSubstring(r.firstJoinAt, 11, 19)},${_safeSubstring(r.lastLeaveAt, 11, 19)},${r.totalWorkMinutes}m,${r.breakMinutes}m,${r.screenshareMinutes}m,${r.status}');
+      }
+      file.writeAsStringSync(buffer.toString());
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Exported to ${file.path}')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Export failed: $e')));
+      }
+    }
   }
 
   Widget _summaryCard(String label, String value, IconData icon, Color color) {

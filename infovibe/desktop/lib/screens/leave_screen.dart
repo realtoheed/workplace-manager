@@ -15,6 +15,9 @@ class _LeaveScreenState extends State<LeaveScreen> {
   List<LeaveRequest> _leaves = [];
   bool _loading = true;
   int _tab = 0;
+  String _typeFilter = 'all';
+
+  Map<String, int> _balance = {};
 
   @override
   void initState() {
@@ -30,8 +33,18 @@ class _LeaveScreenState extends State<LeaveScreen> {
         _leaves = (data['leaves'] as List?)?.map((e) => LeaveRequest.fromJson(e)).toList() ?? [];
         _loading = false;
       });
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[Leave] Failed to load: $e');
       setState(() => _loading = false);
+    }
+    try {
+      final balanceData = await _api.get('/leave/balance');
+      if (balanceData['balance'] is Map) {
+        final b = balanceData['balance'] as Map<String, dynamic>;
+        _balance = b.map((k, v) => MapEntry(k, int.tryParse(v.toString()) ?? 0));
+      }
+    } catch (e) {
+      debugPrint('[Leave] Failed to load balance: $e');
     }
   }
 
@@ -58,9 +71,35 @@ class _LeaveScreenState extends State<LeaveScreen> {
                   onChanged: (v) => type = v ?? type,
                 ),
                 const SizedBox(height: 12),
-                TextField(controller: startCtrl, decoration: const InputDecoration(labelText: 'Start Date', hintText: 'YYYY-MM-DD')),
+                TextField(
+                  controller: startCtrl,
+                  decoration: const InputDecoration(labelText: 'Start Date', hintText: 'YYYY-MM-DD', suffixIcon: Icon(Icons.calendar_today, size: 16)),
+                  readOnly: true,
+                  onTap: () async {
+                    final date = await showDatePicker(
+                      context: context,
+                      initialDate: DateTime.tryParse(startCtrl.text) ?? DateTime.now(),
+                      firstDate: DateTime.now().subtract(const Duration(days: 7)),
+                      lastDate: DateTime.now().add(const Duration(days: 365)),
+                    );
+                    if (date != null) startCtrl.text = date.toIso8601String().substring(0, 10);
+                  },
+                ),
                 const SizedBox(height: 12),
-                TextField(controller: endCtrl, decoration: const InputDecoration(labelText: 'End Date', hintText: 'YYYY-MM-DD')),
+                TextField(
+                  controller: endCtrl,
+                  decoration: const InputDecoration(labelText: 'End Date', hintText: 'YYYY-MM-DD', suffixIcon: Icon(Icons.calendar_today, size: 16)),
+                  readOnly: true,
+                  onTap: () async {
+                    final date = await showDatePicker(
+                      context: context,
+                      initialDate: DateTime.tryParse(endCtrl.text) ?? DateTime.now(),
+                      firstDate: DateTime.tryParse(startCtrl.text) ?? DateTime.now(),
+                      lastDate: DateTime.now().add(const Duration(days: 365)),
+                    );
+                    if (date != null) endCtrl.text = date.toIso8601String().substring(0, 10);
+                  },
+                ),
                 const SizedBox(height: 12),
                 TextField(controller: reasonCtrl, decoration: const InputDecoration(labelText: 'Reason'), maxLines: 3),
               ],
@@ -71,6 +110,14 @@ class _LeaveScreenState extends State<LeaveScreen> {
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           ElevatedButton(
             onPressed: () async {
+              if (startCtrl.text.isEmpty || endCtrl.text.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select start and end dates')));
+                return;
+              }
+              if (endCtrl.text.compareTo(startCtrl.text) < 0) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('End date must be after start date')));
+                return;
+              }
               try {
                 await _api.post('/leave', body: {
                   'leaveType': type, 'startDate': startCtrl.text, 'endDate': endCtrl.text, 'reason': reasonCtrl.text,
@@ -90,24 +137,9 @@ class _LeaveScreenState extends State<LeaveScreen> {
 
   void _tlAction(LeaveRequest l, String action) async {
     if (action == 'reject') {
-      final ctrl = TextEditingController();
-      showDialog(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Rejection Comment'),
-          content: TextField(controller: ctrl, decoration: const InputDecoration(labelText: 'Comment'), maxLines: 3),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-            ElevatedButton(
-              onPressed: () async {
-                await _api.patch('/leave/${l.id}/tl-action', body: {'action': 'reject', 'comment': ctrl.text});
-                Navigator.pop(ctx);
-                _load();
-              },
-              child: const Text('Reject'),
-            ),
-          ],
-        ),
+      await _rejectDialog(
+        title: 'Rejection Comment',
+        onReject: (comment) => _api.patch('/leave/${l.id}/tl-action', body: {'action': 'reject', 'comment': comment}),
       );
     } else {
       await _api.patch('/leave/${l.id}/tl-action', body: {'action': action});
@@ -117,29 +149,37 @@ class _LeaveScreenState extends State<LeaveScreen> {
 
   void _hrAction(LeaveRequest l, String action) async {
     if (action == 'reject') {
-      final ctrl = TextEditingController();
-      showDialog(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Rejection Comment'),
-          content: TextField(controller: ctrl, decoration: const InputDecoration(labelText: 'Comment'), maxLines: 3),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-            ElevatedButton(
-              onPressed: () async {
-                await _api.patch('/leave/${l.id}/hr-action', body: {'action': 'reject', 'comment': ctrl.text});
-                Navigator.pop(ctx);
-                _load();
-              },
-              child: const Text('Reject'),
-            ),
-          ],
-        ),
+      await _rejectDialog(
+        title: 'Rejection Comment',
+        onReject: (comment) => _api.patch('/leave/${l.id}/hr-action', body: {'action': 'reject', 'comment': comment}),
       );
     } else {
       await _api.patch('/leave/${l.id}/hr-action', body: {'action': action});
       _load();
     }
+  }
+
+  Future<void> _rejectDialog({required String title, required Future<Map<String, dynamic>> Function(String comment) onReject}) async {
+    final ctrl = TextEditingController();
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: TextField(controller: ctrl, decoration: const InputDecoration(labelText: 'Comment'), maxLines: 3),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () async {
+              await onReject(ctrl.text);
+              if (ctx.mounted) Navigator.pop(ctx);
+              _load();
+            },
+            child: const Text('Reject'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -154,7 +194,9 @@ class _LeaveScreenState extends State<LeaveScreen> {
 
     final myLeaves = _leaves.where((l) => l.userId == user?.id).toList();
     final pendingLeaves = _leaves.where((l) => l.isPending).toList();
-    final displayLeaves = _tab == 1 ? pendingLeaves : myLeaves;
+    final displayLeaves = (_tab == 1 ? pendingLeaves : myLeaves)
+        .where((l) => _typeFilter == 'all' || l.leaveType == _typeFilter)
+        .toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -165,6 +207,18 @@ class _LeaveScreenState extends State<LeaveScreen> {
             if (canSubmit) ElevatedButton.icon(onPressed: _submitLeave, icon: const Icon(Icons.add, size: 18), label: const Text('Submit Leave')),
           ],
         ),
+        if (_balance.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: _balance.entries.map((e) => Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(color: Colors.blue.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+              child: Text('${e.key}: ${e.value} days', style: TextStyle(fontSize: 12, color: Colors.blue[600], fontWeight: FontWeight.w500)),
+            )).toList(),
+          ),
+        ],
         const SizedBox(height: 12),
         if (showAll)
           Row(
@@ -174,10 +228,25 @@ class _LeaveScreenState extends State<LeaveScreen> {
             )),
           ),
         const SizedBox(height: 12),
+        Row(
+          children: [
+            SizedBox(
+              width: 120,
+              child: DropdownButtonFormField<String>(
+                value: _typeFilter,
+                decoration: const InputDecoration(labelText: 'Type', isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
+                items: ['all', 'sick', 'casual', 'annual'].map((t) => DropdownMenuItem(value: t, child: Text(t == 'all' ? 'All Types' : t))).toList(),
+                onChanged: (v) => setState(() => _typeFilter = v ?? 'all'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
         Expanded(
           child: displayLeaves.isEmpty
             ? Center(child: Text('No leave requests', style: Theme.of(context).textTheme.bodyLarge))
             : SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
                 child: DataTable(
                   columnSpacing: 12,
                   columns: [
@@ -195,13 +264,18 @@ class _LeaveScreenState extends State<LeaveScreen> {
                       DataCell(Text(l.leaveType, style: Theme.of(context).textTheme.bodyMedium)),
                       DataCell(Text('${l.startDate.substring(0, 10)} - ${l.endDate.substring(0, 10)}', style: Theme.of(context).textTheme.bodySmall)),
                       DataCell(_statusBadge(l)),
-                      DataCell(Text(l.reason.length > 25 ? '${l.reason.substring(0, 25)}...' : l.reason, style: Theme.of(context).textTheme.bodyMedium)),
+                      DataCell(
+                        Tooltip(
+                          message: l.reason,
+                          child: Text(l.reason.length > 25 ? '${l.reason.substring(0, 25)}...' : l.reason, style: Theme.of(context).textTheme.bodyMedium),
+                        ),
+                      ),
                       if (_tab == 1) DataCell(l.isPending ? Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           if (isTL && l.tlStatus == 'pending')
                             Row(mainAxisSize: MainAxisSize.min, children: [
-                              TextButton(onPressed: () => _tlAction(l, 'recommend'), child: Text('Recommend', style: TextStyle(fontSize: 11, color: Colors.green[600]))),
+                              TextButton(onPressed: () => _tlAction(l, 'approve'), child: Text('Approve', style: TextStyle(fontSize: 11, color: Colors.green[600]))),
                               TextButton(onPressed: () => _tlAction(l, 'reject'), child: Text('Reject', style: TextStyle(fontSize: 11, color: Colors.red[400]))),
                             ]),
                           if (isAdmin && l.hrStatus == 'pending')

@@ -44,6 +44,18 @@ class AppTheme {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
     ),
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(
+        foregroundColor: const Color(0xFF2563EB),
+      ),
+    ),
+    snackBarTheme: const SnackBarThemeData(
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(8))),
+    ),
+    dialogTheme: const DialogThemeData(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
+    ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: const Color(0xFFF8FAFC),
@@ -105,6 +117,18 @@ class AppTheme {
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
+    ),
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(
+        foregroundColor: const Color(0xFF3B82F6),
+      ),
+    ),
+    snackBarTheme: const SnackBarThemeData(
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(8))),
+    ),
+    dialogTheme: const DialogThemeData(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,

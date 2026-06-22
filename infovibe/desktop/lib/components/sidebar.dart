@@ -26,7 +26,7 @@ class Sidebar extends StatelessWidget {
       width: 260,
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF1E293B) : Colors.white,
-        border: Border(right: BorderSide(color: Theme.of(context).dividerTheme.color!)),
+        border: Border(right: BorderSide(color: Theme.of(context).dividerTheme.color ?? Colors.grey.shade200)),
       ),
       child: Column(
         children: [
@@ -75,7 +75,10 @@ class Sidebar extends StatelessWidget {
                     ],
                   ),
                 ),
-                InkWell(onTap: onLogout, child: Icon(Icons.logout, size: 18, color: Colors.grey[500])),
+                Tooltip(
+                  message: 'Logout',
+                  child: InkWell(onTap: onLogout, child: Icon(Icons.logout, size: 18, color: Colors.grey[500])),
+                ),
               ],
             ),
           ),
@@ -103,11 +106,13 @@ class Sidebar extends StatelessWidget {
               children: [
                 Icon(icons[index], size: 20, color: selected ? Theme.of(context).primaryColor : (isDark ? Colors.grey[400] : Colors.grey[600])),
                 const SizedBox(width: 12),
-                Text(titles[index], style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                  color: selected ? Theme.of(context).primaryColor : (isDark ? Colors.grey[300] : Colors.grey[700]),
-                )),
+                Flexible(
+                  child: Text(titles[index], style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                    color: selected ? Theme.of(context).primaryColor : (isDark ? Colors.grey[300] : Colors.grey[700]),
+                  ), overflow: TextOverflow.ellipsis),
+                ),
               ],
             ),
           ),

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class UpdateInfo {
   final String version;
@@ -10,6 +11,7 @@ class UpdateInfo {
   final String? releaseDate;
   final Map<String, dynamic> downloads;
   final String? changelog;
+  final String? checksum;
 
   UpdateInfo({
     required this.version,
@@ -17,6 +19,7 @@ class UpdateInfo {
     this.releaseDate,
     required this.downloads,
     this.changelog,
+    this.checksum,
   });
 
   factory UpdateInfo.fromJson(Map<String, dynamic> json) => UpdateInfo(
@@ -25,6 +28,7 @@ class UpdateInfo {
     releaseDate: json['releaseDate'] as String?,
     downloads: json['downloads'] as Map<String, dynamic>? ?? {},
     changelog: json['changelog'] as String?,
+    checksum: json['checksum'] as String?,
   );
 }
 
@@ -51,27 +55,37 @@ class UpdateService {
   final ValueNotifier<bool> showOverlay = ValueNotifier(false);
   final ValueNotifier<UpdateProgress> progress = ValueNotifier(UpdateProgress(0, ''));
 
+  final http.Client _httpClient = http.Client();
+  static const String _skipVersionKey = 'skipped_update_version';
+
   String get currentVersion => _currentVersion ?? '0.0.0';
 
   void initialize(String appVersion) {
     _currentVersion = appVersion;
-    _checkForUpdate();
+    Future.delayed(const Duration(seconds: 5), () {
+      if (!_disposed) _checkForUpdate();
+    });
     _timer = Timer.periodic(_checkInterval, (_) => _checkForUpdate());
   }
 
   Future<void> _checkForUpdate() async {
     if (_disposed) return;
     try {
-      final response = await http.get(Uri.parse(_versionUrl)).timeout(const Duration(seconds: 10));
+      final response = await _httpClient.get(Uri.parse(_versionUrl)).timeout(const Duration(seconds: 10));
       if (response.statusCode != 200 || _disposed) return;
 
       final data = jsonDecode(response.body);
       _latestInfo = UpdateInfo.fromJson(data);
 
       if (_isNewerAvailable) {
+        final prefs = await SharedPreferences.getInstance();
+        final skipped = prefs.getString(_skipVersionKey);
+        if (skipped == _latestInfo!.version) return;
         _showUpdateDialog();
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[Update] Check failed: $e');
+    }
   }
 
   bool get _isNewerAvailable {
@@ -88,8 +102,8 @@ class UpdateService {
   }
 
   void _showUpdateDialog() {
-    if (_disposed || _rootContext == null) return;
-    ScaffoldMessenger.of(_rootContext!).showMaterialBanner(
+    if (_disposed || _scaffoldMessenger == null) return;
+    _scaffoldMessenger!.showMaterialBanner(
       MaterialBanner(
         backgroundColor: Colors.blueGrey.shade900,
         padding: const EdgeInsets.all(16),
@@ -105,7 +119,9 @@ class UpdateService {
             if (_latestInfo!.changelog != null) ...[
               const SizedBox(height: 4),
               Text(
-                _latestInfo!.changelog!,
+                _latestInfo!.changelog!.length > 150
+                    ? '${_latestInfo!.changelog!.substring(0, 150)}...'
+                    : _latestInfo!.changelog!,
                 style: const TextStyle(color: Colors.white70, fontSize: 12),
                 maxLines: 3,
                 overflow: TextOverflow.ellipsis,
@@ -116,14 +132,21 @@ class UpdateService {
         actions: [
           TextButton(
             onPressed: () {
-              ScaffoldMessenger.of(_rootContext!).hideCurrentMaterialBanner();
+              _scaffoldMessenger?.hideCurrentMaterialBanner();
             },
             child: const Text('Later', style: TextStyle(color: Colors.white70)),
+          ),
+          TextButton(
+            onPressed: () {
+              _scaffoldMessenger?.hideCurrentMaterialBanner();
+              _skipVersion();
+            },
+            child: const Text('Skip this version', style: TextStyle(color: Colors.white54)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.cyan),
             onPressed: () {
-              ScaffoldMessenger.of(_rootContext!).hideCurrentMaterialBanner();
+              _scaffoldMessenger?.hideCurrentMaterialBanner();
               _startUpdate();
             },
             child: const Text('Update Now'),
@@ -131,6 +154,12 @@ class UpdateService {
         ],
       ),
     );
+  }
+
+  Future<void> _skipVersion() async {
+    if (_latestInfo == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_skipVersionKey, _latestInfo!.version);
   }
 
   void _startUpdate() async {
@@ -193,12 +222,14 @@ class UpdateService {
     }
 
     progress.value = UpdateProgress(0.95, 'Installing update...');
-    await Future.delayed(const Duration(milliseconds: 500));
 
-    await Process.start(installerPath, [
+    final result = await Process.run(installerPath, [
       '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART',
       '/LOG=${tempDir}\\workplace-update-log.txt',
     ]);
+    if (result.exitCode != 0) {
+      throw Exception('Installer failed with exit code ${result.exitCode}');
+    }
 
     progress.value = UpdateProgress(1.0, 'Update ready. Restarting...');
     await Future.delayed(const Duration(milliseconds: 200));
@@ -330,25 +361,28 @@ echo "[updater] Done" >> "$LOG"
         .replaceAll('__DEB_INSTALL__', debInstallBlock);
 
     progress.value = UpdateProgress(1.0, 'Update ready. Restarting...');
-    await Future.delayed(const Duration(milliseconds: 500));
 
     final scriptPath = '$tempDir/workplace-updater.sh';
     await File(scriptPath).writeAsString(updaterScript);
     await Process.run('chmod', ['+x', scriptPath]);
 
-    await Process.start('/bin/bash', [scriptPath]);
+    final result = await Process.run('/bin/bash', [scriptPath]);
+    if (result.exitCode != 0 && result.exitCode != 1) {
+      debugPrint('[Update] Updater script exited with code ${result.exitCode}');
+    }
     await Future.delayed(const Duration(milliseconds: 200));
     exit(0);
   }
 
-  BuildContext? _rootContext;
+  ScaffoldMessengerState? _scaffoldMessenger;
   void attach(BuildContext context) {
-    _rootContext = context;
+    _scaffoldMessenger = ScaffoldMessenger.maybeOf(context);
   }
 
   void dispose() {
     _disposed = true;
     _timer?.cancel();
     _timer = null;
+    _httpClient.close();
   }
 }

@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../main.dart' show kAppVersion;
+import 'login_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -15,6 +16,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   bool _joinMicOn = false;
   bool _joinCameraOn = false;
+  bool _notificationsEnabled = true;
 
   @override
   void initState() {
@@ -27,6 +29,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (mounted) setState(() {
       _joinMicOn = prefs.getBool('joinMicOn') ?? false;
       _joinCameraOn = prefs.getBool('joinCameraOn') ?? false;
+      _notificationsEnabled = prefs.getBool('notificationsEnabled') ?? true;
     });
   }
 
@@ -38,6 +41,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _setJoinCameraOn(bool v) async {
     (await SharedPreferences.getInstance()).setBool('joinCameraOn', v);
     if (mounted) setState(() => _joinCameraOn = v);
+  }
+
+  Future<void> _setNotifications(bool v) async {
+    (await SharedPreferences.getInstance()).setBool('notificationsEnabled', v);
+    if (mounted) setState(() => _notificationsEnabled = v);
+  }
+
+  Future<void> _clearCache() async {
+    final prefs = await SharedPreferences.getInstance();
+    final keys = prefs.getKeys().where((k) => k != 'auth_cookies');
+    for (final k in keys) {
+      await prefs.remove(k);
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cache cleared'), duration: Duration(seconds: 1)),
+      );
+    }
   }
 
   @override
@@ -73,10 +94,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 SegmentedButton<ThemeMode>(
                   segments: const [
                     ButtonSegment(value: ThemeMode.light, label: Text('Light'), icon: Icon(Icons.light_mode, size: 16)),
+                    ButtonSegment(value: ThemeMode.system, label: Text('System'), icon: Icon(Icons.settings, size: 16)),
                     ButtonSegment(value: ThemeMode.dark, label: Text('Dark'), icon: Icon(Icons.dark_mode, size: 16)),
                   ],
                   selected: {theme.mode},
                   onSelectionChanged: (v) => theme.setThemeMode(v.first),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          _card(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Notifications', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 12),
+                SwitchListTile(
+                  value: _notificationsEnabled,
+                  onChanged: _setNotifications,
+                  title: const Text('Enable notifications'),
+                  subtitle: const Text('Receive meeting and chat notifications'),
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
                 ),
               ],
             ),
@@ -110,24 +150,52 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('App Version', style: Theme.of(context).textTheme.titleMedium),
-                Text('v$kAppVersion', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey)),
+                const Text('Clear Cache', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+                TextButton(
+                  onPressed: _clearCache,
+                  child: const Text('Clear'),
+                ),
               ],
             ),
           ),
           const SizedBox(height: 24),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: () {
-                context.read<AuthProvider>().logout();
-                Navigator.pushReplacementNamed(context, '/login');
-              },
-              icon: const Icon(Icons.logout, color: Colors.red),
-              label: Text('Logout', style: TextStyle(color: Colors.red[400])),
-              style: OutlinedButton.styleFrom(side: BorderSide(color: Colors.red.withOpacity(0.4)), padding: const EdgeInsets.symmetric(vertical: 16)),
+          _card(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('About', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 12),
+                _infoRow(context, 'App Version', 'v$kAppVersion'),
+                const SizedBox(height: 8),
+                TextButton.icon(
+                  onPressed: () => showLicensePage(
+                    context: context,
+                    applicationName: 'Workplace Manager',
+                    applicationVersion: kAppVersion,
+                  ),
+                  icon: const Icon(Icons.description, size: 16),
+                  label: const Text('Open Source Licenses'),
+                ),
+              ],
             ),
           ),
+          const SizedBox(height: 24),
+          if (user != null)
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  context.read<AuthProvider>().logout();
+                  Navigator.of(context).pushAndRemoveUntil(
+                    MaterialPageRoute(builder: (_) => const LoginScreen()),
+                    (_) => false,
+                  );
+                },
+                icon: const Icon(Icons.logout, color: Colors.red),
+                label: Text('Logout', style: TextStyle(color: Colors.red[400])),
+                style: OutlinedButton.styleFrom(side: BorderSide(color: Colors.red.withOpacity(0.4)), padding: const EdgeInsets.symmetric(vertical: 16)),
+              ),
+            ),
         ],
       ),
     );

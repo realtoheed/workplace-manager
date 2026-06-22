@@ -13,48 +13,78 @@ class RemoteControlService {
   RemoteControlRole _role = RemoteControlRole.none;
   String? _targetParticipantId;
   String? _controllerParticipantId;
+  String? _localParticipantId;
 
   final ValueNotifier<RemoteControlRole> role = ValueNotifier(RemoteControlRole.none);
   final ValueNotifier<bool> hasControl = ValueNotifier(false);
   final ValueNotifier<bool> isControlled = ValueNotifier(false);
 
-  StreamController<Map<String, dynamic>>? _incomingEvents;
+  final StreamController<Map<String, dynamic>> _incomingEvents = StreamController<Map<String, dynamic>>.broadcast();
+
+  final List<void Function()> _socketCleanups = [];
+
+  Timer? _mouseThrottle;
+  double _pendingX = 0;
+  double _pendingY = 0;
 
   void initialize(String roomId) {
-    _socket.on('remote-control-request', (payload) {
-      if (_role == RemoteControlRole.none && payload['targetParticipantId'] != null) {
-        _controllerParticipantId = payload['participantId'];
-        hasControl.value = false;
-        isControlled.value = payload['targetParticipantId'] == _socket.serverUrl; // simplified
-      }
-    });
+    _cleanupListeners();
 
-    _socket.on('remote-control-granted', (payload) {
-      if (_role == RemoteControlRole.controller) {
-        hasControl.value = true;
-      }
-    });
+    _socketCleanups.add(
+      _socket.on('remote-control-request', (payload) {
+        if (_role == RemoteControlRole.none && payload['targetParticipantId'] != null) {
+          _controllerParticipantId = payload['participantId'];
+          hasControl.value = false;
+          isControlled.value = payload['targetParticipantId'] == _localParticipantId;
+        }
+      }),
+    );
 
-    _socket.on('remote-control-denied', (_) {
-      if (_role == RemoteControlRole.controller) {
+    _socketCleanups.add(
+      _socket.on('remote-control-granted', (payload) {
+        if (_role == RemoteControlRole.controller) {
+          hasControl.value = true;
+        }
+      }),
+    );
+
+    _socketCleanups.add(
+      _socket.on('remote-control-denied', (_) {
+        if (_role == RemoteControlRole.controller) {
+          _role = RemoteControlRole.none;
+          role.value = RemoteControlRole.none;
+          hasControl.value = false;
+        }
+      }),
+    );
+
+    _socketCleanups.add(
+      _socket.on('remote-control-event', (payload) {
+        if (_role == RemoteControlRole.target) {
+          _incomingEvents.add(Map<String, dynamic>.from(payload));
+        }
+      }),
+    );
+
+    _socketCleanups.add(
+      _socket.on('remote-control-ended', (_) {
         _role = RemoteControlRole.none;
         role.value = RemoteControlRole.none;
         hasControl.value = false;
-      }
-    });
+        isControlled.value = false;
+      }),
+    );
+  }
 
-    _socket.on('remote-control-event', (payload) {
-      if (_role == RemoteControlRole.target) {
-        _incomingEvents?.add(Map<String, dynamic>.from(payload));
-      }
-    });
+  void setLocalParticipantId(String id) {
+    _localParticipantId = id;
+  }
 
-    _socket.on('remote-control-ended', (_) {
-      _role = RemoteControlRole.none;
-      role.value = RemoteControlRole.none;
-      hasControl.value = false;
-      isControlled.value = false;
-    });
+  void _cleanupListeners() {
+    for (final cleanup in _socketCleanups) {
+      cleanup();
+    }
+    _socketCleanups.clear();
   }
 
   Future<void> requestControl(String targetId) async {
@@ -90,7 +120,12 @@ class RemoteControlService {
   }
 
   Future<void> sendMouseMove(double x, double y) async {
-    await sendInputEvent({'type': 'mousemove', 'x': x, 'y': y});
+    _pendingX = x;
+    _pendingY = y;
+    _mouseThrottle ??= Timer(const Duration(milliseconds: 50), () {
+      _mouseThrottle = null;
+      sendInputEvent({'type': 'mousemove', 'x': _pendingX, 'y': _pendingY});
+    });
   }
 
   Future<void> sendMouseClick(int button) async {
@@ -101,10 +136,7 @@ class RemoteControlService {
     await sendInputEvent({'type': 'key', 'keyCode': keyCode, 'isDown': isDown});
   }
 
-  Stream<Map<String, dynamic>> get incomingEvents {
-    _incomingEvents ??= StreamController<Map<String, dynamic>>.broadcast();
-    return _incomingEvents!.stream;
-  }
+  Stream<Map<String, dynamic>> get incomingEvents => _incomingEvents.stream;
 
   Future<void> endControl() async {
     _socket.emit('end-remote-control', {
@@ -116,9 +148,14 @@ class RemoteControlService {
     isControlled.value = false;
     _targetParticipantId = null;
     _controllerParticipantId = null;
+    _mouseThrottle?.cancel();
+    _mouseThrottle = null;
   }
 
   void dispose() {
-    _incomingEvents?.close();
+    _cleanupListeners();
+    _incomingEvents.close();
+    _mouseThrottle?.cancel();
+    _mouseThrottle = null;
   }
 }

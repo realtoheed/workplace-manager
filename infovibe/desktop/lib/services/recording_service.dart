@@ -1,5 +1,3 @@
-import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 
@@ -17,20 +15,34 @@ class RecordingService {
   final ValueNotifier<String> status = ValueNotifier('');
 
   Future<String> get _defaultOutputPath async {
-    final dir = Directory.current.path;
+    final dir = Platform.environment['HOME'] ??
+                 Platform.environment['USERPROFILE'] ??
+                 Directory.current.path;
+    final documents = '$dir/Documents';
     final timestamp = DateTime.now().millisecondsSinceEpoch;
-    return '$dir/recording_$timestamp.mp4';
+    return '$documents/recording_$timestamp.mp4';
   }
 
-  Future<bool> startRecording({String? outputPath, String? audioDevice, String? videoDevice}) async {
+  Future<bool> startRecording({String? outputPath, String? audioDevice, String? videoDevice, String? resolution}) async {
     try {
       _outputPath = outputPath ?? await _defaultOutputPath;
+      final outDir = Directory(_outputPath!);
+      if (!outDir.parent.existsSync()) {
+        outDir.parent.createSync(recursive: true);
+      }
       state.value = RecordingState.recording;
       status.value = 'Starting recording...';
 
-      final args = _buildFfmpegArgs(audioDevice: audioDevice, videoDevice: videoDevice);
+      final ffmpegCheck = await Process.run('which', ['ffmpeg']);
+      if (ffmpegCheck.exitCode != 0) {
+        state.value = RecordingState.idle;
+        status.value = 'ffmpeg not found. Please install ffmpeg.';
+        return false;
+      }
+
+      final args = _buildFfmpegArgs(resolution: resolution, audioDevice: audioDevice, videoDevice: videoDevice);
       _ffmpegProcess = await Process.start('ffmpeg', args);
-      status.value = 'Recording to $_outputPath';
+      status.value = 'Recording to ${_outputPath ?? 'unknown location'}';
       return true;
     } catch (e) {
       state.value = RecordingState.idle;
@@ -39,11 +51,12 @@ class RecordingService {
     }
   }
 
-  List<String> _buildFfmpegArgs({String? audioDevice, String? videoDevice}) {
+  List<String> _buildFfmpegArgs({String? resolution, String? audioDevice, String? videoDevice}) {
+    final res = resolution ?? '1920x1080';
     if (Platform.isLinux) {
       return [
         '-f', 'x11grab',
-        '-s', '1920x1080',
+        '-s', res,
         '-i', videoDevice ?? ':0.0',
         '-f', 'pulse',
         '-i', audioDevice ?? 'default',
@@ -54,30 +67,34 @@ class RecordingService {
         _outputPath!,
       ];
     } else if (Platform.isWindows) {
-      return [
+      final args = [
         '-f', 'gdigrab',
-        '-s', '1920x1080',
+        '-s', res,
         '-i', 'desktop',
         '-c:v', 'libx264',
         '-preset', 'ultrafast',
-        '-y',
-        _outputPath!,
       ];
+      if (audioDevice != null) {
+        args.addAll(['-f', 'dshow', '-i', 'audio=$audioDevice']);
+      } else {
+        args.addAll(['-f', 'dshow', '-i', 'audio=virtual-audio-capturer']);
+      }
+      args.addAll(['-c:a', 'aac', '-y', _outputPath!]);
+      return args;
     }
     return [];
   }
 
-  Future<void> stopRecording() async {
+  Future<void> stopRecording({Duration? delayBeforeKill}) async {
     if (_ffmpegProcess != null) {
       _ffmpegProcess!.stdin.writeln('q');
-      await _ffmpegProcess!.kill();
+      await Future.delayed(delayBeforeKill ?? const Duration(milliseconds: 300));
+      _ffmpegProcess!.kill();
       _ffmpegProcess = null;
     }
     state.value = RecordingState.idle;
-    status.value = recordingStopped ? 'Recording saved to $_outputPath' : 'Recording stopped';
+    status.value = _ffmpegProcess == null ? 'Recording saved to ${_outputPath ?? 'unknown location'}' : 'Recording stopped';
   }
-
-  bool get recordingStopped => _ffmpegProcess == null;
 
   Future<void> dispose() async {
     await stopRecording();

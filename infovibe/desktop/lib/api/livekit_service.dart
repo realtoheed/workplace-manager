@@ -34,15 +34,19 @@ class LiveKitService {
   final VoidCallbacks onRoomConnected = VoidCallbacks();
   final VoidCallbacks onRoomDisconnected = VoidCallbacks();
 
+  final http.Client _httpClient = http.Client();
+
   Future<void> initialize() async {
     try {
       await lk.LiveKitClient.initialize();
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[LiveKit] Failed to initialize: $e');
+    }
   }
 
   Future<String?> _fetchToken(String roomId, String participantId, String name) async {
     try {
-      final response = await http.Client().post(
+      final response = await _httpClient.post(
         Uri.parse('$_meetBaseUrl/api/livekit/token'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
@@ -55,12 +59,15 @@ class LiveKitService {
         final data = jsonDecode(response.body);
         return data['token'] as String?;
       }
-    } catch (_) {}
+      debugPrint('[LiveKit] Token fetch failed: ${response.statusCode} ${response.body}');
+    } catch (e) {
+      debugPrint('[LiveKit] Token fetch error: $e');
+    }
     return null;
   }
 
-  /// Returns null on success, error message on failure.
   Future<String?> connect(String roomId, String participantId, String name) async {
+    lastError = null;
     try {
       final token = await _fetchToken(roomId, participantId, name);
       if (token == null) {
@@ -72,6 +79,9 @@ class LiveKitService {
 
       _room?.disconnect();
       _room?.dispose();
+
+      _listener?.dispose();
+      _listener = null;
 
       final room = lk.Room(
         roomOptions: lk.RoomOptions(
@@ -154,7 +164,7 @@ class LiveKitService {
       await room.connect(url, token, connectOptions: const lk.ConnectOptions(autoSubscribe: true));
       debugPrint('[LiveKit] Room.connect succeeded');
 
-      return null; // success
+      return null;
     } catch (e, stack) {
       lastError = 'LiveKit error: $e';
       debugPrint('[LiveKit] Error: $e\n$stack');
@@ -164,7 +174,7 @@ class LiveKitService {
 
   Future<String> _resolveLiveKitUrl() async {
     try {
-      final response = await http.Client().post(
+      final response = await _httpClient.post(
         Uri.parse('$_meetBaseUrl/api/livekit/token'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'roomId': 'test', 'participantId': 'test', 'name': 'test'}),
@@ -173,18 +183,11 @@ class LiveKitService {
         final data = jsonDecode(response.body);
         if (data['url'] != null) return data['url'] as String;
       }
-    } catch (_) {}
-    return 'wss://meet.infovibex.com/livekit';
-  }
-
-  void _enableLocalMedia() {
-    try {
-      _room?.localParticipant?.setMicrophoneEnabled(true);
-      _room?.localParticipant?.setCameraEnabled(true);
-      debugPrint('[LiveKit] Local media enabled');
+      debugPrint('[LiveKit] URL resolution failed: ${response.statusCode}');
     } catch (e) {
-      debugPrint('[LiveKit] Failed to enable local media: $e');
+      debugPrint('[LiveKit] URL resolution error: $e');
     }
+    return 'wss://meet.infovibex.com/livekit';
   }
 
   void _updateParticipants() {
@@ -197,6 +200,9 @@ class LiveKitService {
     for (final p in _room!.remoteParticipants.values) {
       all.add(_participantToMap(p, false));
     }
+    final oldIds = participants.value.map((m) => m['id']).join(',');
+    final newIds = all.map((m) => m['id']).join(',');
+    if (oldIds == newIds) return;
     participants.value = all;
     participantCount.value = all.length;
   }
@@ -204,12 +210,13 @@ class LiveKitService {
   Map<String, dynamic> _participantToMap(lk.Participant p, bool isLocal) {
     final videoPub = p.videoTrackPublications.isNotEmpty ? p.videoTrackPublications.first : null;
     final audioPub = p.audioTrackPublications.isNotEmpty ? p.audioTrackPublications.first : null;
+    final activeSpeakers = _room?.activeSpeakers;
     return {
       'id': p.identity,
       'name': p.name?.isNotEmpty == true ? p.name : p.identity,
       'muted': audioPub?.muted ?? true,
       'videoOff': videoPub?.muted ?? true,
-      'speaking': _room?.activeSpeakers.contains(p) ?? false,
+      'speaking': activeSpeakers?.contains(p) ?? false,
       'isLocal': isLocal,
     };
   }
@@ -261,9 +268,7 @@ class LiveKitService {
     try {
       debugPrint('[LiveKit] Setting camera enabled: $enabled');
       await _room!.localParticipant!.setCameraEnabled(enabled);
-      if (!enabled) localVideoTrack.value = null;
       _syncLocalTrackState();
-      isVideoOff.value = !enabled;
       _socket.emit('participant-update', {'isVideoEnabled': enabled});
       _updateParticipants();
       debugPrint('[LiveKit] Camera ${enabled ? "enabled" : "disabled"} successfully');
@@ -271,7 +276,6 @@ class LiveKitService {
     } catch (e) {
       final errorMsg = e.toString();
       debugPrint('[LiveKit] setCameraEnabled failed: $errorMsg');
-      // On Linux, check if it's a permission issue
       if (errorMsg.contains('Permission') || errorMsg.contains('permission')) {
         lastError = 'Camera permission denied. Please check your system settings.';
       } else if (errorMsg.contains('device') || errorMsg.contains('Device')) {
@@ -296,6 +300,7 @@ class LiveKitService {
   }
 
   Future<String?> toggleScreenShare() async {
+    lastError = null;
     if (_room?.localParticipant == null) {
       lastError = 'Not connected to room';
       return lastError;
@@ -318,16 +323,12 @@ class LiveKitService {
         }
         screenShareTrack.value = null;
         isScreenSharing.value = false;
-      } else if (lk.lkPlatformIsDesktop()) {
-        await _room!.localParticipant!.setScreenShareEnabled(true);
-        _syncLocalTrackState();
       } else {
         await _room!.localParticipant!.setScreenShareEnabled(true);
         _syncLocalTrackState();
       }
       _updateParticipants();
       debugPrint('[LiveKit] Screen share: ${willBeSharing ? "started" : "stopped"}');
-      lastError = null;
       return null;
     } catch (e) {
       debugPrint('[LiveKit] Screen share failed: $e');
@@ -343,6 +344,7 @@ class LiveKitService {
 
   Future<void> disconnect() async {
     _listener?.dispose();
+    _listener = null;
     if (_room != null) {
       await _room!.disconnect();
       _room!.dispose();
@@ -360,6 +362,10 @@ class LiveKitService {
     screenShareTrack.value = null;
   }
 
+  void dispose() {
+    _httpClient.close();
+    disconnect();
+  }
 }
 
 class VoidCallbacks {
@@ -368,7 +374,9 @@ class VoidCallbacks {
   void remove(VoidCallback cb) => _callbacks.remove(cb);
   void notify() {
     for (final cb in List.from(_callbacks)) {
-      cb();
+      try {
+        cb();
+      } catch (_) {}
     }
   }
 }

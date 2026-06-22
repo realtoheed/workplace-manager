@@ -43,4 +43,6 @@ class SalaryRecord {
   );
 
   String get period => '$month/$year';
+
+  DateTime get periodDate => DateTime(year, month);
 }

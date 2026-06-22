@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:livekit_client/livekit_client.dart' as lk;
 import 'package:provider/provider.dart';
@@ -28,13 +29,14 @@ class MeetingWindow extends StatefulWidget {
   State<MeetingWindow> createState() => _MeetingWindowState();
 }
 
-class _MeetingWindowState extends State<MeetingWindow> {
+class _MeetingWindowState extends State<MeetingWindow> with TickerProviderStateMixin {
   final _lk = LiveKitService();
   final _socket = MeetSocketService();
   final _api = ApiClient();
   final _chatController = TextEditingController();
   final List<ChatMessage> _chatMessages = [];
   final Set<String> _seenMessageIds = {};
+  static const int _maxChatMessages = 500;
 
   bool _showChat = false;
   bool _showParticipants = false;
@@ -43,7 +45,9 @@ class _MeetingWindowState extends State<MeetingWindow> {
   bool _connecting = true;
   bool _cameraBusy = false;
   String? _error;
+  int _sidePanelTab = 0;
 
+  final List<void Function()> _socketCleanups = [];
   StreamSubscription<List<lk.MediaDevice>>? _deviceSub;
   List<lk.MediaDevice> _microphones = [];
   List<lk.MediaDevice> _cameras = [];
@@ -65,12 +69,10 @@ class _MeetingWindowState extends State<MeetingWindow> {
     _chatController.dispose();
     _reportAttendanceLeave();
     _socket.emit('leave-room', {});
-    _socket.off('joined-room');
-    _socket.off('join-room-error');
-    _socket.off('chat-message');
-    _socket.off('participant-joined');
-    _socket.off('participant-left');
-    _socket.off('meeting-ended');
+    for (final cleanup in _socketCleanups) {
+      cleanup();
+    }
+    _socketCleanups.clear();
     _lk.disconnect();
     super.dispose();
   }
@@ -108,20 +110,36 @@ class _MeetingWindowState extends State<MeetingWindow> {
       'meetingType': 'instant',
     });
 
-    _socket.on('joined-room', (_) => _connectLiveKit(user.id, user.name));
-    _socket.on('join-room-error', (error) {
+    _socketCleanups.add(_socket.on('joined-room', (_) => _connectLiveKit(user.id, user.name)));
+    _socketCleanups.add(_socket.on('join-room-error', (error) {
       if (!mounted) return;
       setState(() {
         _connecting = false;
         _error = error is Map ? error['message'] ?? 'Failed to join' : 'Failed to join';
       });
-    });
-    _socket.on('chat-message', _receiveChatMessage);
-    _socket.on('participant-joined', (_) => _softRefresh());
-    _socket.on('participant-left', (_) => _softRefresh());
-    _socket.on('meeting-ended', (_) {
+    }));
+    _socketCleanups.add(_socket.on('chat-message', _receiveChatMessage));
+    _socketCleanups.add(_socket.on('participant-joined', (_) {
+      _softRefresh();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('${_ is Map ? _['name'] ?? 'Someone' : 'Someone'} joined'),
+          duration: const Duration(seconds: 2),
+        ));
+      }
+    }));
+    _socketCleanups.add(_socket.on('participant-left', (_) {
+      _softRefresh();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('${_ is Map ? _['name'] ?? 'Someone' : 'Someone'} left'),
+          duration: const Duration(seconds: 2),
+        ));
+      }
+    }));
+    _socketCleanups.add(_socket.on('meeting-ended', (_) {
       if (mounted) Navigator.of(context).pop();
-    });
+    }));
 
     if (_lk.isConnected) {
       await _applyInitialMedia();
@@ -156,11 +174,17 @@ class _MeetingWindowState extends State<MeetingWindow> {
   }
 
   void _reportAttendanceJoin() {
-    _api.post('/attendance/join', body: {'meetingId': widget.meetingId, 'room': widget.roomId});
+    _api.post('/attendance/join', body: {'meetingId': widget.meetingId, 'room': widget.roomId}).catchError((e) {
+      debugPrint('[Meeting] Failed to report join: $e');
+    });
   }
 
   void _reportAttendanceLeave() {
-    _api.post('/attendance/leave', body: {'meetingId': widget.meetingId, 'room': widget.roomId});
+    try {
+      _api.post('/attendance/leave', body: {'meetingId': widget.meetingId, 'room': widget.roomId}).catchError((e) {
+        debugPrint('[Meeting] Failed to report leave: $e');
+      });
+    } catch (_) {}
   }
 
   void _receiveChatMessage(dynamic msg) {
@@ -179,13 +203,29 @@ class _MeetingWindowState extends State<MeetingWindow> {
         fileUrl: msg['fileUrl']?.toString(),
         createdAt: (msg['createdAt'] ?? DateTime.now().toIso8601String()).toString(),
       ));
+      if (_chatMessages.length > _maxChatMessages) {
+        final removed = _chatMessages.removeAt(0);
+        _seenMessageIds.remove(removed.id);
+      }
     });
   }
 
   void _sendMessage() {
     final text = _chatController.text.trim();
     if (text.isEmpty) return;
+    if (text.startsWith('/')) {
+      _handleSlashCommand(text);
+      return;
+    }
     _socket.emit('chat-message', {'body': text});
+    _chatController.clear();
+  }
+
+  void _handleSlashCommand(String cmd) {
+    final parts = cmd.split(' ');
+    if (parts[0] == '/mute' && parts.length > 1 && parts[1] == 'all') {
+      _socket.emit('mute-all', {});
+    }
     _chatController.clear();
   }
 
@@ -195,8 +235,11 @@ class _MeetingWindowState extends State<MeetingWindow> {
     await _lk.toggleVideo();
     if (!mounted) return;
     setState(() => _cameraBusy = false);
-    if (_lk.isVideoOff.value == wasOff && _lk.lastError != null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_lk.lastError!), backgroundColor: const Color(0xFFB91C1C)));
+    if (_lk.isVideoOff.value == wasOff) {
+      final msg = _lk.lastError ?? 'Failed to toggle camera';
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: const Color(0xFFB91C1C)));
+      }
     }
   }
 
@@ -232,7 +275,7 @@ class _MeetingWindowState extends State<MeetingWindow> {
         children: [
           Column(
             children: [
-              _TopBar(meetingId: widget.meetingId, onLeave: () => Navigator.of(context).pop()),
+              _TopBar(meetingId: widget.meetingId, onLeave: _confirmLeave),
               Expanded(
                 child: Row(
                   children: [
@@ -240,7 +283,7 @@ class _MeetingWindowState extends State<MeetingWindow> {
                     if (_showChat || _showParticipants)
                       SizedBox(
                         width: 320,
-                        child: _showChat ? _chatPanel() : _participantsPanel(),
+                        child: _sidePanelTabs(),
                       ),
                   ],
                 ),
@@ -271,16 +314,25 @@ class _MeetingWindowState extends State<MeetingWindow> {
                   onToggleScreenShare: _toggleScreenShare,
                   onRaiseHand: _lk.raiseHand,
                   onToggleChat: () => setState(() {
+                    _sidePanelTab = 0;
                     _showChat = !_showChat;
                     if (_showChat) _showParticipants = false;
                   }),
                   onToggleParticipants: () => setState(() {
+                    _sidePanelTab = 1;
                     _showParticipants = !_showParticipants;
                     if (_showParticipants) _showChat = false;
                   }),
-                  onRequestRecording: () => _lk.isRecording.value = !_lk.isRecording.value,
+                  onRequestRecording: () => {
+                    _lk.isRecording.value = !_lk.isRecording.value,
+                    if (_lk.isRecording.value && mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Recording started'), duration: Duration(seconds: 2)),
+                      )
+                    }
+                  },
                   onRequestRemoteControl: () => setState(() => _isControlled = !_isControlled),
-                  onLeave: () => Navigator.of(context).pop(),
+                  onLeave: _confirmLeave,
                   onShowBreakout: () => setState(() => _showBreakout = true),
                   onSelectMicrophone: _selectMicrophone,
                   onSelectCamera: _selectCamera,
@@ -299,6 +351,27 @@ class _MeetingWindowState extends State<MeetingWindow> {
           ),
           if (_isControlled) Positioned(top: 58, right: 18, child: _statusPill(Icons.settings_remote, 'Screen is being controlled', const Color(0xFFF59E0B))),
           if (_showBreakout) _breakoutOverlay(),
+        ],
+      ),
+    );
+  }
+
+  void _confirmLeave() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Leave Meeting'),
+        content: const Text('Are you sure you want to leave the meeting?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Stay')),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              Navigator.of(context).pop();
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
+            child: const Text('Leave'),
+          ),
         ],
       ),
     );
@@ -350,6 +423,18 @@ class _MeetingWindowState extends State<MeetingWindow> {
               final rows = (count + cols - 1) ~/ cols;
               final tileWidth = constraints.maxWidth / cols;
               final tileHeight = constraints.maxHeight / rows;
+
+              if (count == 2) {
+                return Row(
+                  children: list.map((p) => Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.all(5),
+                      child: _videoTile(p),
+                    ),
+                  )).toList(),
+                );
+              }
+
               return Wrap(
                 children: [
                   for (final participant in list)
@@ -406,96 +491,143 @@ class _MeetingWindowState extends State<MeetingWindow> {
     );
   }
 
-  Widget _chatPanel() {
+  Widget _sidePanelTabs() {
     return _sidePanel(
-      title: 'Chat',
-      onClose: () => setState(() => _showChat = false),
+      title: _sidePanelTab == 0 ? 'Chat' : 'Participants',
+      onClose: () {
+        setState(() {
+          _showChat = false;
+          _showParticipants = false;
+        });
+      },
       child: Column(
         children: [
-          Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.all(14),
-              itemCount: _chatMessages.length,
-              itemBuilder: (_, index) {
-                final msg = _chatMessages[index];
-                final time = DateTime.tryParse(msg.createdAt);
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Text(msg.userName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-                          const SizedBox(width: 8),
-                          Text(time == null ? '' : DateFormat('HH:mm').format(time), style: const TextStyle(color: Colors.white54, fontSize: 11)),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(msg.message, style: const TextStyle(color: Colors.white70, height: 1.35)),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: const BoxDecoration(border: Border(top: BorderSide(color: Color(0xFF263244)))),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _chatController,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: InputDecoration(
-                      hintText: 'Message everyone',
-                      hintStyle: const TextStyle(color: Colors.white54),
-                      filled: true,
-                      fillColor: const Color(0xFF0F172A),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(22), borderSide: BorderSide.none),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => setState(() => _sidePanelTab = 0),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    decoration: BoxDecoration(
+                      border: Border(bottom: BorderSide(color: _sidePanelTab == 0 ? const Color(0xFF22D3EE) : const Color(0xFF263244), width: 2)),
                     ),
-                    onSubmitted: (_) => _sendMessage(),
+                    child: Center(child: Text('Chat', style: TextStyle(color: _sidePanelTab == 0 ? Colors.white : Colors.white54, fontWeight: FontWeight.w600))),
                   ),
                 ),
-                const SizedBox(width: 8),
-                IconButton(onPressed: _sendMessage, icon: const Icon(Icons.send, color: Color(0xFF22D3EE))),
-              ],
-            ),
+              ),
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => setState(() => _sidePanelTab = 1),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    decoration: BoxDecoration(
+                      border: Border(bottom: BorderSide(color: _sidePanelTab == 1 ? const Color(0xFF22D3EE) : const Color(0xFF263244), width: 2)),
+                    ),
+                    child: Center(child: Text('Participants', style: TextStyle(color: _sidePanelTab == 1 ? Colors.white : Colors.white54, fontWeight: FontWeight.w600))),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          Expanded(
+            child: _sidePanelTab == 0 ? _chatPanelContent() : _participantsPanelContent(),
           ),
         ],
       ),
     );
   }
 
-  Widget _participantsPanel() {
-    return _sidePanel(
-      title: 'Participants',
-      onClose: () => setState(() => _showParticipants = false),
-      child: ValueListenableBuilder<List<Map<String, dynamic>>>(
-        valueListenable: _lk.participants,
-        builder: (_, participants, __) => ListView.builder(
-          padding: const EdgeInsets.all(10),
-          itemCount: participants.length,
-          itemBuilder: (_, index) {
-            final p = participants[index];
-            final name = (p['name'] ?? 'Unknown').toString();
-            return ListTile(
-              leading: _avatar(name, 17, 15),
-              title: Text(name, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white)),
-              subtitle: p['isLocal'] == true ? const Text('You', style: TextStyle(color: Colors.white54, fontSize: 12)) : null,
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(p['muted'] == true ? Icons.mic_off : Icons.mic, color: p['muted'] == true ? const Color(0xFFF87171) : Colors.white54, size: 17),
-                  const SizedBox(width: 8),
-                  Icon(p['videoOff'] == true ? Icons.videocam_off : Icons.videocam, color: p['videoOff'] == true ? Colors.white38 : Colors.white54, size: 17),
-                ],
-              ),
-            );
-          },
+  Widget _chatPanelContent() {
+    return Column(
+      children: [
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.all(14),
+            itemCount: _chatMessages.length,
+            itemBuilder: (_, index) {
+              final msg = _chatMessages[index];
+              final time = DateTime.tryParse(msg.createdAt);
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(msg.userName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+                        const SizedBox(width: 8),
+                        Text(time == null ? '' : DateFormat('HH:mm').format(time), style: const TextStyle(color: Colors.white54, fontSize: 11)),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(msg.message, style: const TextStyle(color: Colors.white70, height: 1.35)),
+                  ],
+                ),
+              );
+            },
+          ),
         ),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: const BoxDecoration(border: Border(top: BorderSide(color: Color(0xFF263244)))),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.emoji_emotions_outlined, color: Colors.white54, size: 20),
+                onPressed: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Emoji picker coming soon'), duration: Duration(seconds: 1)),
+                  );
+                },
+              ),
+              Expanded(
+                child: TextField(
+                  controller: _chatController,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    hintText: 'Message everyone',
+                    hintStyle: const TextStyle(color: Colors.white54),
+                    filled: true,
+                    fillColor: const Color(0xFF0F172A),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(22), borderSide: BorderSide.none),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  ),
+                  onSubmitted: (_) => _sendMessage(),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(onPressed: _sendMessage, icon: const Icon(Icons.send, color: Color(0xFF22D3EE))),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _participantsPanelContent() {
+    return ValueListenableBuilder<List<Map<String, dynamic>>>(
+      valueListenable: _lk.participants,
+      builder: (_, participants, __) => ListView.builder(
+        padding: const EdgeInsets.all(10),
+        itemCount: participants.length,
+        itemBuilder: (_, index) {
+          final p = participants[index];
+          final name = (p['name'] ?? 'Unknown').toString();
+          return ListTile(
+            leading: _avatar(name, 17, 15),
+            title: Text(name, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white)),
+            subtitle: p['isLocal'] == true ? const Text('You', style: TextStyle(color: Colors.white54, fontSize: 12)) : null,
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(p['muted'] == true ? Icons.mic_off : Icons.mic, color: p['muted'] == true ? const Color(0xFFF87171) : Colors.white54, size: 17),
+                const SizedBox(width: 8),
+                Icon(p['videoOff'] == true ? Icons.videocam_off : Icons.videocam, color: p['videoOff'] == true ? Colors.white38 : Colors.white54, size: 17),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -619,12 +751,12 @@ class _MeetingWindowState extends State<MeetingWindow> {
 class _TopBar extends StatelessWidget {
   final String meetingId;
   final VoidCallback onLeave;
+  static final _lk = LiveKitService();
 
   const _TopBar({required this.meetingId, required this.onLeave});
 
   @override
   Widget build(BuildContext context) {
-    final lk = LiveKitService();
     return Container(
       height: 48,
       padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -638,7 +770,7 @@ class _TopBar extends StatelessWidget {
           const _ElapsedTimer(),
           const SizedBox(width: 18),
           ValueListenableBuilder<int>(
-            valueListenable: lk.participantCount,
+            valueListenable: _lk.participantCount,
             builder: (_, count, __) => Row(
               children: [
                 const Icon(Icons.people_outline, color: Colors.white70, size: 18),
@@ -648,6 +780,14 @@ class _TopBar extends StatelessWidget {
             ),
           ),
           const Spacer(),
+          IconButton(
+            tooltip: 'Copy meeting link',
+            icon: const Icon(Icons.link, color: Colors.white70, size: 20),
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: 'https://app.infovibex.com/join/$meetingId'));
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Link copied'), duration: Duration(seconds: 1)));
+            },
+          ),
           IconButton(tooltip: 'Leave meeting', onPressed: onLeave, icon: const Icon(Icons.close, color: Colors.white)),
         ],
       ),

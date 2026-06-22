@@ -27,6 +27,7 @@ class _PrejoinScreenState extends State<PrejoinScreen> {
   bool _micOn = false;
   bool _connecting = true;
   bool _cameraBusy = false;
+  bool _joining = false;
   String? _error;
   String _userName = '';
   lk.LocalVideoTrack? _localVideoTrack;
@@ -55,9 +56,11 @@ class _PrejoinScreenState extends State<PrejoinScreen> {
   Future<void> _loadDefaults() async {
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
+    final user = context.read<AuthProvider>().currentUser;
     setState(() {
       _micOn = prefs.getBool('joinMicOn') ?? false;
       _cameraOn = prefs.getBool('joinCameraOn') ?? false;
+      _userName = user?.name ?? '';
     });
   }
 
@@ -294,7 +297,7 @@ class _PrejoinScreenState extends State<PrejoinScreen> {
           width: 260,
           height: 50,
           child: ElevatedButton.icon(
-            onPressed: _join,
+            onPressed: _joining ? null : _join,
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF06B6D4),
               foregroundColor: Colors.white,
@@ -302,8 +305,10 @@ class _PrejoinScreenState extends State<PrejoinScreen> {
               shadowColor: const Color(0xFF06B6D4).withOpacity(0.42),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
             ),
-            icon: const Icon(Icons.video_call),
-            label: const Text('Join Meeting', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+            icon: _joining
+                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : const Icon(Icons.video_call),
+            label: Text(_joining ? 'Joining...' : 'Join Meeting', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
           ),
         ),
       ],
@@ -415,6 +420,7 @@ class _PrejoinScreenState extends State<PrejoinScreen> {
   }
 
   void _join() {
+    setState(() => _joining = true);
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
         fullscreenDialog: true,

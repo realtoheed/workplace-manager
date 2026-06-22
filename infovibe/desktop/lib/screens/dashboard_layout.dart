@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../components/sidebar.dart';
@@ -22,9 +23,21 @@ class DashboardLayout extends StatefulWidget {
 
 class _DashboardLayoutState extends State<DashboardLayout> {
   int _currentIndex = 0;
+  bool _lastAdminState = false;
 
   final _titles = ['Dashboard', 'Employees', 'Meetings', 'Attendance', 'Leave', 'Salary', 'Settings', 'Company Meeting'];
   final _icons = [Icons.dashboard, Icons.people, Icons.videocam, Icons.access_time, Icons.event, Icons.attach_money, Icons.settings, Icons.meeting_room];
+
+  final _screens = const [
+    DashboardHome(),
+    EmployeesScreen(),
+    MeetingsScreen(),
+    AttendanceScreen(),
+    LeaveScreen(),
+    SalaryScreen(),
+    SettingsScreen(),
+    CompanyMeetingSettings(),
+  ];
 
   void _navigate(int index) => setState(() => _currentIndex = index);
 
@@ -34,16 +47,12 @@ class _DashboardLayoutState extends State<DashboardLayout> {
     final user = auth.currentUser!;
     final isAdmin = user.isAdmin;
 
-    final screens = [
-      const DashboardHome(),
-      const EmployeesScreen(),
-      const MeetingsScreen(),
-      const AttendanceScreen(),
-      const LeaveScreen(),
-      const SalaryScreen(),
-      const SettingsScreen(),
-      if (isAdmin) const CompanyMeetingSettings(),
-    ];
+    if (isAdmin != _lastAdminState) {
+      _lastAdminState = isAdmin;
+      if (!isAdmin && _currentIndex >= _titles.length - 1) {
+        _currentIndex = 0;
+      }
+    }
 
     final filteredTitles = [..._titles];
     final filteredIcons = [..._icons];
@@ -52,46 +61,73 @@ class _DashboardLayoutState extends State<DashboardLayout> {
       filteredIcons.removeLast();
     }
 
-    return Scaffold(
+    final adjustedIndex = isAdmin ? _currentIndex : (_currentIndex >= _titles.length - 1 ? 0 : _currentIndex);
+
+    return Focus(
+      autofocus: true,
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent) {
+          final int? tabIndex;
+          if (event.logicalKey == LogicalKeyboardKey.digit1) tabIndex = 0;
+          else if (event.logicalKey == LogicalKeyboardKey.digit2) tabIndex = 1;
+          else if (event.logicalKey == LogicalKeyboardKey.digit3) tabIndex = 2;
+          else if (event.logicalKey == LogicalKeyboardKey.digit4) tabIndex = 3;
+          else if (event.logicalKey == LogicalKeyboardKey.digit5) tabIndex = 4;
+          else if (event.logicalKey == LogicalKeyboardKey.digit6) tabIndex = 5;
+          else if (event.logicalKey == LogicalKeyboardKey.digit7) tabIndex = 6;
+          else if (event.logicalKey == LogicalKeyboardKey.digit8) tabIndex = 7;
+          else tabIndex = null;
+
+          if (tabIndex != null && HardwareKeyboard.instance.isControlPressed && tabIndex < filteredTitles.length) {
+            _navigate(tabIndex);
+            return KeyEventResult.handled;
+          }
+        }
+        return KeyEventResult.ignored;
+      },
+      child: Scaffold(
       body: Stack(
         children: [
           Row(
             children: [
               Sidebar(
-                currentIndex: _currentIndex,
+                currentIndex: isAdmin ? _currentIndex : adjustedIndex,
                 titles: filteredTitles,
                 icons: filteredIcons,
                 user: user,
-                onItemSelected: _navigate,
+                onItemSelected: (i) {
+                  _navigate(i);
+                },
                 onLogout: () => auth.logout(),
               ),
               Expanded(
                 child: Column(
                   children: [
                     TopBar(
-                      title: filteredTitles[_currentIndex],
-                      actions: _currentIndex == 2 ? [
+                      title: filteredTitles[isAdmin ? _currentIndex : adjustedIndex],
+                      actions: [
                         TextButton.icon(
                           onPressed: () {
+                            final id = 'quick-${DateTime.now().millisecondsSinceEpoch}';
                             Navigator.of(context).push(
                               MaterialPageRoute(
                                 fullscreenDialog: true,
-                                builder: (_) => const PrejoinScreen(
-                                  meetingId: 'quick-meeting',
-                                  roomId: 'quick-meeting',
-                                ),
+                                builder: (_) => PrejoinScreen(meetingId: id, roomId: id),
                               ),
                             );
                           },
                           icon: const Icon(Icons.add, size: 18),
                           label: const Text('Quick Meeting'),
                         ),
-                      ] : [],
+                      ],
                     ),
                     Expanded(
                       child: Padding(
                         padding: const EdgeInsets.all(20),
-                        child: screens.length > _currentIndex ? screens[_currentIndex] : const SizedBox.shrink(),
+                        child: IndexedStack(
+                          index: isAdmin ? _currentIndex : adjustedIndex,
+                          children: _screens,
+                        ),
                       ),
                     ),
                   ],

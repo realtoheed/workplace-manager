@@ -14,14 +14,23 @@ import 'screens/dashboard_layout.dart';
 
 const String kApiBaseUrl = 'https://app.infovibex.com/api';
 const String kSocketUrl = 'https://app.infovibex.com';
-const String kAppVersion = '1.0.19';
+const String kAppVersion = '1.0.14';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    debugPrint('[Fatal] ${details.exception}\n${details.stack}');
+  };
+  PlatformDispatcher.instance.onError = (error, stack) {
+    debugPrint('[Platform] Error: $error\n$stack');
+    return true;
+  };
   await windowManager.ensureInitialized();
   await windowManager.setMinimumSize(const Size(1024, 720));
   await windowManager.setSize(const Size(1200, 900));
   await windowManager.setTitle('Workplace Manager');
+  await windowManager.setPreventClose(true);
   ApiClient().setBaseUrl(kApiBaseUrl);
   SocketService().setServerUrl(kSocketUrl);
   await LiveKitService().initialize();
@@ -63,8 +72,15 @@ class AppShell extends StatefulWidget {
   State<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends State<AppShell> {
+class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   final _updateService = UpdateService();
+  bool _socketConnected = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
 
   @override
   void didChangeDependencies() {
@@ -74,8 +90,20 @@ class _AppShellState extends State<AppShell> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _updateService.dispose();
+    ApiClient().dispose();
+    LiveKitService().dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      debugPrint('[AppShell] App paused');
+    } else if (state == AppLifecycleState.resumed) {
+      debugPrint('[AppShell] App resumed');
+    }
   }
 
   @override
@@ -92,11 +120,14 @@ class _AppShellState extends State<AppShell> {
             if (!auth.isLoggedIn) {
               return const LoginScreen();
             }
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (auth.currentUser != null) {
-                context.read<SocketProvider>().connect(auth.currentUser!.id, auth.currentUser!.name);
-              }
-            });
+            if (!_socketConnected && auth.currentUser != null) {
+              _socketConnected = true;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (auth.currentUser != null) {
+                  context.read<SocketProvider>().connect(auth.currentUser!.id, auth.currentUser!.name);
+                }
+              });
+            }
             return const DashboardLayout();
           },
         ),
