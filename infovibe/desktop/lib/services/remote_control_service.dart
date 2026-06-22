@@ -12,7 +12,6 @@ class RemoteControlService {
   final SocketService _socket = SocketService();
   RemoteControlRole _role = RemoteControlRole.none;
   String? _targetParticipantId;
-  String? _controllerParticipantId;
   String? _localParticipantId;
 
   final ValueNotifier<RemoteControlRole> role = ValueNotifier(RemoteControlRole.none);
@@ -33,7 +32,6 @@ class RemoteControlService {
     _socketCleanups.add(
       _socket.on('remote-control-request', (payload) {
         if (_role == RemoteControlRole.none && payload['targetParticipantId'] != null) {
-          _controllerParticipantId = payload['participantId'];
           hasControl.value = false;
           isControlled.value = payload['targetParticipantId'] == _localParticipantId;
         }
@@ -99,7 +97,6 @@ class RemoteControlService {
   Future<void> approveControl(String controllerId) async {
     _role = RemoteControlRole.target;
     role.value = RemoteControlRole.target;
-    _controllerParticipantId = controllerId;
     _socket.emit('approve-remote-control', {
       'participantId': controllerId,
     });
@@ -147,7 +144,6 @@ class RemoteControlService {
     hasControl.value = false;
     isControlled.value = false;
     _targetParticipantId = null;
-    _controllerParticipantId = null;
     _mouseThrottle?.cancel();
     _mouseThrottle = null;
   }

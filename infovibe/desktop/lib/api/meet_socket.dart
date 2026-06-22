@@ -21,8 +21,6 @@ class MeetSocketService {
   String? _pendingUserId;
   String? _pendingUserName;
   bool _pendingIsClient = false;
-  bool _initialConnect = true;
-
   void connect({String? userId, String? userName, bool isClient = false}) {
     if (_socket != null && _socket!.connected &&
         _pendingUserId == userId && _pendingUserName == userName) {

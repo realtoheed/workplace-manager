@@ -213,7 +213,7 @@ class LiveKitService {
     final activeSpeakers = _room?.activeSpeakers;
     return {
       'id': p.identity,
-      'name': p.name?.isNotEmpty == true ? p.name : p.identity,
+      'name': p.name.isNotEmpty ? p.name : p.identity,
       'muted': audioPub?.muted ?? true,
       'videoOff': videoPub?.muted ?? true,
       'speaking': activeSpeakers?.contains(p) ?? false,

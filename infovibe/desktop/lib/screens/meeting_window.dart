@@ -476,7 +476,7 @@ class _MeetingWindowState extends State<MeetingWindow> with TickerProviderStateM
           child: Stack(
             fit: StackFit.expand,
             children: [
-              if (!videoOff && track != null)
+              if (!videoOff)
                 lk.VideoTrackRenderer(track)
               else
                 Center(child: _avatar(name, 42, 38)),
