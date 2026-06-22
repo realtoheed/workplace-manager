@@ -174,17 +174,15 @@ class _MeetingWindowState extends State<MeetingWindow> with TickerProviderStateM
   }
 
   void _reportAttendanceJoin() {
-    _api.post('/attendance/join', body: {'meetingId': widget.meetingId, 'room': widget.roomId}).catchError((e) {
+    _api.post('/attendance/join', body: {'meetingId': widget.meetingId, 'room': widget.roomId}).then((_) {}, onError: (e) {
       debugPrint('[Meeting] Failed to report join: $e');
     });
   }
 
   void _reportAttendanceLeave() {
-    try {
-      _api.post('/attendance/leave', body: {'meetingId': widget.meetingId, 'room': widget.roomId}).catchError((e) {
-        debugPrint('[Meeting] Failed to report leave: $e');
-      });
-    } catch (_) {}
+    _api.post('/attendance/leave', body: {'meetingId': widget.meetingId, 'room': widget.roomId}).then((_) {}, onError: (e) {
+      debugPrint('[Meeting] Failed to report leave: $e');
+    });
   }
 
   void _receiveChatMessage(dynamic msg) {
