@@ -27,9 +27,12 @@ class LiveKitService {
   final ValueNotifier<int> participantCount = ValueNotifier(0);
   final ValueNotifier<List<Map<String, dynamic>>> participants = ValueNotifier([]);
   final ValueNotifier<Map<String, lk.RemoteVideoTrack?>> videoTracks = ValueNotifier({});
+  final ValueNotifier<Map<String, lk.RemoteVideoTrack?>> screenShareTracks = ValueNotifier({});
   final ValueNotifier<lk.LocalVideoTrack?> localVideoTrack = ValueNotifier(null);
   final ValueNotifier<lk.LocalVideoTrack?> screenShareTrack = ValueNotifier(null);
   String? lastError;
+  bool _micOperationInProgress = false;
+  bool _cameraOperationInProgress = false;
 
   final VoidCallbacks onRoomConnected = VoidCallbacks();
   final VoidCallbacks onRoomDisconnected = VoidCallbacks();
@@ -103,6 +106,8 @@ class LiveKitService {
         ..on<lk.RoomDisconnectedEvent>((_) {
           debugPrint('[LiveKit] Room disconnected');
           onRoomDisconnected.notify();
+          videoTracks.value = {};
+          screenShareTracks.value = {};
           localVideoTrack.value = null;
           screenShareTrack.value = null;
         })
@@ -111,16 +116,31 @@ class LiveKitService {
         ..on<lk.TrackSubscribedEvent>((event) {
           if (event.track is lk.RemoteVideoTrack) {
             final identity = event.participant.identity;
-            final tracks = Map<String, lk.RemoteVideoTrack?>.from(videoTracks.value);
-            tracks[identity] = event.track as lk.RemoteVideoTrack;
-            videoTracks.value = tracks;
+            final isScreen = event.publication.source == lk.TrackSource.screenShareVideo;
+            if (isScreen) {
+              final tracks = Map<String, lk.RemoteVideoTrack?>.from(screenShareTracks.value);
+              tracks[identity] = event.track as lk.RemoteVideoTrack;
+              screenShareTracks.value = tracks;
+            } else {
+              final tracks = Map<String, lk.RemoteVideoTrack?>.from(videoTracks.value);
+              tracks[identity] = event.track as lk.RemoteVideoTrack;
+              videoTracks.value = tracks;
+            }
+            _updateParticipants();
           }
         })
         ..on<lk.TrackUnsubscribedEvent>((event) {
           final identity = event.participant.identity;
-          final tracks = Map<String, lk.RemoteVideoTrack?>.from(videoTracks.value);
-          tracks.remove(identity);
-          videoTracks.value = tracks;
+          final isScreen = event.publication.source == lk.TrackSource.screenShareVideo;
+          if (isScreen) {
+            final tracks = Map<String, lk.RemoteVideoTrack?>.from(screenShareTracks.value);
+            tracks.remove(identity);
+            screenShareTracks.value = tracks;
+          } else {
+            final tracks = Map<String, lk.RemoteVideoTrack?>.from(videoTracks.value);
+            tracks.remove(identity);
+            videoTracks.value = tracks;
+          }
           _updateParticipants();
         })
         ..on<lk.ActiveSpeakersChangedEvent>((_) => _updateParticipants())
@@ -208,15 +228,24 @@ class LiveKitService {
   }
 
   Map<String, dynamic> _participantToMap(lk.Participant p, bool isLocal) {
-    final videoPub = p.videoTrackPublications.isNotEmpty ? p.videoTrackPublications.first : null;
-    final audioPub = p.audioTrackPublications.isNotEmpty ? p.audioTrackPublications.first : null;
     final activeSpeakers = _room?.activeSpeakers;
+    bool screenSharing = false;
+    bool videoOff = true;
+    for (final pub in p.videoTrackPublications) {
+      if (pub.source == lk.TrackSource.screenShareVideo) {
+        if (!pub.muted) screenSharing = true;
+      } else {
+        if (!pub.muted) videoOff = false;
+      }
+    }
+    final audioPub = p.audioTrackPublications.isNotEmpty ? p.audioTrackPublications.first : null;
     return {
       'id': p.identity,
       'name': p.name.isNotEmpty ? p.name : p.identity,
       'muted': audioPub?.muted ?? true,
-      'videoOff': videoPub?.muted ?? true,
+      'videoOff': videoOff,
       'speaking': activeSpeakers?.contains(p) ?? false,
+      'screenSharing': screenSharing,
       'isLocal': isLocal,
     };
   }
@@ -249,30 +278,39 @@ class LiveKitService {
   }
 
   Future<void> setMicEnabled(bool enabled) async {
-    if (_room?.localParticipant == null) return;
+    if (_micOperationInProgress || _room?.localParticipant == null) return;
+    _micOperationInProgress = true;
     try {
-      await _room!.localParticipant!.setMicrophoneEnabled(enabled);
+      await _room!.localParticipant!.setMicrophoneEnabled(enabled).timeout(const Duration(seconds: 5));
       isMuted.value = !enabled;
       _socket.emit('participant-update', {'isAudioEnabled': enabled});
       _updateParticipants();
     } catch (e) {
       debugPrint('[LiveKit] setMicEnabled failed: $e');
+    } finally {
+      _micOperationInProgress = false;
     }
   }
 
   Future<void> setCameraEnabled(bool enabled) async {
-    if (_room?.localParticipant == null) {
-      lastError = 'Not connected to meeting';
+    if (_cameraOperationInProgress || _room?.localParticipant == null) {
+      if (_room?.localParticipant == null) {
+        lastError = 'Not connected to meeting';
+      }
       return;
     }
+    _cameraOperationInProgress = true;
     try {
       debugPrint('[LiveKit] Setting camera enabled: $enabled');
-      await _room!.localParticipant!.setCameraEnabled(enabled);
+      await _room!.localParticipant!.setCameraEnabled(enabled).timeout(const Duration(seconds: 10));
       _syncLocalTrackState();
       _socket.emit('participant-update', {'isVideoEnabled': enabled});
       _updateParticipants();
       debugPrint('[LiveKit] Camera ${enabled ? "enabled" : "disabled"} successfully');
       lastError = null;
+    } on TimeoutException {
+      lastError = 'Camera operation timed out. Please try again.';
+      debugPrint('[LiveKit] setCameraEnabled timed out');
     } catch (e) {
       final errorMsg = e.toString();
       debugPrint('[LiveKit] setCameraEnabled failed: $errorMsg');
@@ -283,6 +321,8 @@ class LiveKitService {
       } else {
         lastError = 'Failed to toggle camera: $errorMsg';
       }
+    } finally {
+      _cameraOperationInProgress = false;
     }
   }
 
@@ -358,8 +398,11 @@ class LiveKitService {
     participantCount.value = 0;
     participants.value = [];
     videoTracks.value = {};
+    screenShareTracks.value = {};
     localVideoTrack.value = null;
     screenShareTrack.value = null;
+    _micOperationInProgress = false;
+    _cameraOperationInProgress = false;
   }
 
   void dispose() {

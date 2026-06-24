@@ -130,6 +130,7 @@ export default function CoreMeetBridgeClient({ closeOnLeave = false, desktopShel
   const [loading, setLoading] = useState(true);
   const [isPhoneDevice, setIsPhoneDevice] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showPrejoin, setShowPrejoin] = useState(true);
   const [showBreakoutDialog, setShowBreakoutDialog] = useState(false);
   const [desktopRecordingState, setDesktopRecordingState] = useState<DesktopRecordingState>(DEFAULT_DESKTOP_RECORDING_STATE);
   const [desktopRecordingError, setDesktopRecordingError] = useState<string | null>(null);
@@ -413,7 +414,7 @@ export default function CoreMeetBridgeClient({ closeOnLeave = false, desktopShel
   }, [applyDesktopRecordingApiState, desktopShell]);
 
   useEffect(() => {
-    if (!selectedMeeting || isPhoneDevice || joinUrl) {
+    if (!selectedMeeting || isPhoneDevice || joinUrl || showPrejoin) {
       return;
     }
 
@@ -693,6 +694,7 @@ export default function CoreMeetBridgeClient({ closeOnLeave = false, desktopShel
       return;
     }
 
+    setShowPrejoin(false);
     setShowBreakoutDialog(true);
     loadRoomPresence(selectedMeeting.id).catch((requestError) => {
       setError(requestError instanceof Error ? requestError.message : "Unable to load breakout rooms.");
@@ -735,6 +737,38 @@ export default function CoreMeetBridgeClient({ closeOnLeave = false, desktopShel
           />
 
         </>
+      ) : showPrejoin && selectedMeeting ? (
+        <div className="flex h-full min-h-0 items-center justify-center bg-slate-950 px-6">
+          <div className="w-full max-w-md rounded-[2rem] border border-white/10 bg-white/5 p-8 shadow-2xl backdrop-blur text-center">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-600">
+              <svg className="h-7 w-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+            </div>
+            <h1 className="mb-1 text-2xl font-bold text-white">{selectedMeeting.meetingName}</h1>
+            <p className="mb-6 text-sm text-slate-400">You are joining as <span className="font-medium text-white">{user.name}</span></p>
+            <button
+              className="w-full rounded-xl bg-indigo-600 px-6 py-3 text-base font-semibold text-white transition hover:bg-indigo-500"
+              onClick={() => {
+                setShowPrejoin(false);
+                setLoading(true);
+                void handleOpenMeeting();
+              }}
+              type="button"
+            >
+              Join Meeting
+            </button>
+            {roomBindings.length > 1 ? (
+              <button
+                className="mt-3 w-full rounded-xl border border-white/10 px-6 py-3 text-base font-medium text-slate-300 transition hover:bg-white/5"
+                onClick={handleOpenBreakoutDialog}
+                type="button"
+              >
+                Choose Breakout Room
+              </button>
+            ) : null}
+          </div>
+        </div>
       ) : (
         <div className="flex h-full min-h-0 flex-col items-center justify-center bg-slate-950 px-6 text-center text-white">
           <p className="font-display text-3xl font-bold sm:text-4xl">InfoVibe Meet</p>
@@ -747,6 +781,45 @@ export default function CoreMeetBridgeClient({ closeOnLeave = false, desktopShel
           </p>
         </div>
       )}
+
+      {showBreakoutDialog && selectedMeeting ? (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/60 px-6">
+          <div className="w-full max-w-md rounded-[2rem] border border-white/10 bg-slate-900 p-8 shadow-2xl text-center">
+            <h2 className="mb-1 text-xl font-bold text-white">Breakout Rooms</h2>
+            <p className="mb-6 text-sm text-slate-400">Choose a room to join</p>
+            <div className="flex flex-col gap-3">
+              {roomBindings.map((room) => (
+                <button
+                  key={room.physicalRoomId}
+                  className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-5 py-4 text-left transition hover:bg-white/10"
+                  onClick={() => void handleJoinBreakout(room.logicalRoomId)}
+                  type="button"
+                >
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-600/20 text-indigo-400">
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium text-white">{room.roomName}</p>
+                    <p className="text-xs text-slate-400">Breakout Room</p>
+                  </div>
+                  <svg className="h-5 w-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              ))}
+            </div>
+            <button
+              className="mt-6 w-full rounded-xl border border-white/10 px-6 py-3 text-base font-medium text-slate-300 transition hover:bg-white/5"
+              onClick={() => setShowBreakoutDialog(false)}
+              type="button"
+            >
+              Back
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {desktopShell && joinUrl && desktopRecordingState.isHost ? (
         <div className="pointer-events-none absolute right-4 top-4 z-10 flex justify-end">
