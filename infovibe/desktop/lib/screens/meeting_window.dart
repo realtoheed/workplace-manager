@@ -267,14 +267,12 @@ class _MeetingWindowState extends State<MeetingWindow> with TickerProviderStateM
 
   Future<void> _toggleVideo() async {
     setState(() => _cameraBusy = true);
-    final wasOff = _lk.isVideoOff.value;
     await _lk.toggleVideo();
     if (!mounted) return;
     setState(() => _cameraBusy = false);
-    if (_lk.isVideoOff.value == wasOff) {
-      final msg = _lk.lastError ?? 'Failed to toggle camera';
+    if (_lk.lastError != null) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: const Color(0xFFB91C1C)));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_lk.lastError!), backgroundColor: const Color(0xFFB91C1C)));
       }
     }
   }

@@ -90,7 +90,8 @@ class UpdateService {
 
   bool get _isNewerAvailable {
     if (_latestInfo == null || _currentVersion == null) return false;
-    final currentParts = _currentVersion!.split('.').map(int.tryParse).toList();
+    final cleanVersion = _currentVersion!.split('+').first;
+    final currentParts = cleanVersion.split('.').map(int.tryParse).toList();
     final latestParts = _latestInfo!.version.split('.').map(int.tryParse).toList();
     for (int i = 0; i < 3; i++) {
       final c = i < currentParts.length ? currentParts[i] ?? 0 : 0;

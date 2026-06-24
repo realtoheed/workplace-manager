@@ -300,14 +300,19 @@ class LiveKitService {
       return;
     }
     _cameraOperationInProgress = true;
+    lastError = null;
     try {
       debugPrint('[LiveKit] Setting camera enabled: $enabled');
       await _room!.localParticipant!.setCameraEnabled(enabled).timeout(const Duration(seconds: 10));
-      _syncLocalTrackState();
+      // Wait for the track publication event to propagate (max 3s)
+      for (int i = 0; i < 30; i++) {
+        await Future.delayed(const Duration(milliseconds: 100));
+        _syncLocalTrackState();
+        if (isVideoOff.value == !enabled) break;
+      }
       _socket.emit('participant-update', {'isVideoEnabled': enabled});
       _updateParticipants();
-      debugPrint('[LiveKit] Camera ${enabled ? "enabled" : "disabled"} successfully');
-      lastError = null;
+      debugPrint('[LiveKit] Camera ${enabled ? "enabled" : "disabled"} (isVideoOff=${isVideoOff.value})');
     } on TimeoutException {
       lastError = 'Camera operation timed out. Please try again.';
       debugPrint('[LiveKit] setCameraEnabled timed out');
@@ -364,15 +369,31 @@ class LiveKitService {
         screenShareTrack.value = null;
         isScreenSharing.value = false;
       } else {
-        await _room!.localParticipant!.setScreenShareEnabled(true);
-        _syncLocalTrackState();
+        await _room!.localParticipant!.setScreenShareEnabled(true).timeout(const Duration(seconds: 15));
+        // Wait for screen share track to appear (max 5s)
+        for (int i = 0; i < 50; i++) {
+          await Future.delayed(const Duration(milliseconds: 100));
+          _syncLocalTrackState();
+          if (isScreenSharing.value) break;
+        }
       }
       _updateParticipants();
-      debugPrint('[LiveKit] Screen share: ${willBeSharing ? "started" : "stopped"}');
-      return null;
+      debugPrint('[LiveKit] Screen share: ${willBeSharing ? "started" : "stopped"} (isScreenSharing=${isScreenSharing.value})');
+      if (!willBeSharing || isScreenSharing.value) return null;
+      lastError = 'Screen share source not selected or timed out';
+      return lastError;
+    } on TimeoutException {
+      lastError = 'Screen share timed out. Please try again.';
+      debugPrint('[LiveKit] Screen share timed out');
+      return lastError;
     } catch (e) {
-      debugPrint('[LiveKit] Screen share failed: $e');
-      lastError = 'Screen share failed: $e';
+      final errorMsg = e.toString();
+      debugPrint('[LiveKit] Screen share failed: $errorMsg');
+      if (errorMsg.contains('cancel') || errorMsg.contains('abort')) {
+        lastError = 'Screen share cancelled';
+      } else {
+        lastError = 'Screen share failed: $errorMsg';
+      }
       return lastError;
     }
   }
