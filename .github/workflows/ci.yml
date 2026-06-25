@@ -111,36 +111,37 @@ jobs:
           name: workplace-manager-msix
           path: downloads
 
-      - name: Setup SSH
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
-
-      - name: Add host key
+      - name: Deploy
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          HOST: ${{ secrets.DEPLOY_HOST || '2.25.206.232' }}
+          PORT: ${{ secrets.DEPLOY_PORT || '2222' }}
         run: |
+          if [ -z "$SSH_KEY" ]; then
+            echo "DEPLOY_SSH_KEY secret not set — skipping deploy"
+            exit 0
+          fi
           mkdir -p ~/.ssh
-          ssh-keyscan -p ${{ secrets.DEPLOY_PORT || '2222' }} ${{ secrets.DEPLOY_HOST || '2.25.206.232' }} >> ~/.ssh/known_hosts
+          echo "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -p "$PORT" "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Create remote directories
-        run: |
-          ssh -p ${{ secrets.DEPLOY_PORT || '2222' }} root@${{ secrets.DEPLOY_HOST || '2.25.206.232' }} "mkdir -p /var/www/infovibex.com/downloads"
+          echo "→ Creating remote directories"
+          ssh -p "$PORT" root@"$HOST" "mkdir -p /var/www/infovibex.com/downloads"
 
-      - name: Deploy MSIX
-        run: |
-          scp -P ${{ secrets.DEPLOY_PORT || '2222' }} downloads/workplace_manager.msix root@${{ secrets.DEPLOY_HOST || '2.25.206.232' }}:/var/www/infovibex.com/downloads/workplace-manager-1.0.24.msix
+          echo "→ Deploying MSIX"
+          scp -P "$PORT" downloads/workplace_manager.msix root@"$HOST":/var/www/infovibex.com/downloads/workplace-manager-1.0.24.msix
 
-      - name: Deploy version.json
-        run: |
-          scp -P ${{ secrets.DEPLOY_PORT || '2222' }} deploy/version.json root@${{ secrets.DEPLOY_HOST || '2.25.206.232' }}:/var/www/infovibex.com/version.json
+          echo "→ Deploying version.json"
+          scp -P "$PORT" deploy/version.json root@"$HOST":/var/www/infovibex.com/version.json
 
-      - name: Deploy index.html
-        run: |
-          scp -P ${{ secrets.DEPLOY_PORT || '2222' }} deploy/index.html root@${{ secrets.DEPLOY_HOST || '2.25.206.232' }}:/var/www/infovibex.com/index.html
+          echo "→ Deploying index.html"
+          scp -P "$PORT" deploy/index.html root@"$HOST":/var/www/infovibex.com/index.html
 
-      - name: Set permissions
-        run: |
-          ssh -p ${{ secrets.DEPLOY_PORT || '2222' }} root@${{ secrets.DEPLOY_HOST || '2.25.206.232' }} "chown -R www-data:www-data /var/www/infovibex.com/downloads /var/www/infovibex.com/version.json /var/www/infovibex.com/index.html"
+          echo "→ Setting permissions"
+          ssh -p "$PORT" root@"$HOST" "chown -R www-data:www-data /var/www/infovibex.com/downloads /var/www/infovibex.com/version.json /var/www/infovibex.com/index.html"
 
-      - name: Clean up old Windows installers
-        run: |
-          ssh -p ${{ secrets.DEPLOY_PORT || '2222' }} root@${{ secrets.DEPLOY_HOST || '2.25.206.232' }} "rm -f /var/www/infovibex.com/downloads/workplace-manager-setup.exe"
+          echo "→ Cleaning up old Inno Setup installer"
+          ssh -p "$PORT" root@"$HOST" "rm -f /var/www/infovibex.com/downloads/workplace-manager-setup.exe"
+
+          echo "✓ Deploy complete"
