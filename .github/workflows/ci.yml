@@ -63,8 +63,28 @@ jobs:
       - name: Build Windows release
         run: flutter build windows --release
 
-      - name: Upload Windows build artifact
+      - name: Upload Windows portable artifact
         uses: actions/upload-artifact@v4
         with:
           name: workplace-manager-windows
           path: infovibe/desktop/build/windows/x64/runner/Release
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress --limit-output
+
+      - name: Get app version
+        shell: pwsh
+        working-directory: infovibe/desktop
+        run: |
+          $ver = Select-String -Path pubspec.yaml -Pattern '^version: (.+)\+' | ForEach-Object { $_.Matches.Groups[1].Value }
+          echo "APP_VERSION=$ver" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build Windows installer
+        run: |
+          iscc windows/installer/setup.iss /dMyAppVersion=%APP_VERSION%
+
+      - name: Upload Windows installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: workplace-manager-installer
+          path: infovibe/desktop/windows/installer/workplace-manager-setup.exe

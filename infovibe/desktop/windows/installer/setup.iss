@@ -2,7 +2,7 @@
 ; Run with: ISCC.exe setup.iss /dMyAppVersion=1.0.19
 
 #define MyAppName "Workplace Manager"
-#define MyAppPublisher "com.workplace"
+#define MyAppPublisher "Workplace Manager"
 #define MyAppURL "https://infovibex.com"
 #define MyAppExeName "workplace_manager.exe"
 #define MyAppAssocName "Workplace Manager"
