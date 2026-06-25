@@ -431,7 +431,7 @@ echo "[updater] Done" >> "$LOG"
       return 0;
     }
     try {
-      final result = await Process.run('sh', ['-c', 'echo $PPID']);
+      final result = await Process.run('sh', ['-c', r'echo $PPID']);
       if (result.exitCode == 0) return int.tryParse(result.stdout.toString().trim()) ?? 0;
     } catch (_) {}
     return 0;
