@@ -97,3 +97,50 @@ jobs:
           name: workplace-manager-cert
           path: infovibe/desktop/build/windows/msix/*.pfx
           if-no-files-found: warn
+
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [analyze-and-test, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download MSIX artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: workplace-manager-msix
+          path: downloads
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: Add host key
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -p ${{ secrets.DEPLOY_PORT || '2222' }} ${{ secrets.DEPLOY_HOST || '2.25.206.232' }} >> ~/.ssh/known_hosts
+
+      - name: Create remote directories
+        run: |
+          ssh -p ${{ secrets.DEPLOY_PORT || '2222' }} root@${{ secrets.DEPLOY_HOST || '2.25.206.232' }} "mkdir -p /var/www/infovibex.com/downloads"
+
+      - name: Deploy MSIX
+        run: |
+          scp -P ${{ secrets.DEPLOY_PORT || '2222' }} downloads/workplace_manager.msix root@${{ secrets.DEPLOY_HOST || '2.25.206.232' }}:/var/www/infovibex.com/downloads/workplace-manager-1.0.24.msix
+
+      - name: Deploy version.json
+        run: |
+          scp -P ${{ secrets.DEPLOY_PORT || '2222' }} deploy/version.json root@${{ secrets.DEPLOY_HOST || '2.25.206.232' }}:/var/www/infovibex.com/version.json
+
+      - name: Deploy index.html
+        run: |
+          scp -P ${{ secrets.DEPLOY_PORT || '2222' }} deploy/index.html root@${{ secrets.DEPLOY_HOST || '2.25.206.232' }}:/var/www/infovibex.com/index.html
+
+      - name: Set permissions
+        run: |
+          ssh -p ${{ secrets.DEPLOY_PORT || '2222' }} root@${{ secrets.DEPLOY_HOST || '2.25.206.232' }} "chown -R www-data:www-data /var/www/infovibex.com/downloads /var/www/infovibex.com/version.json /var/www/infovibex.com/index.html"
+
+      - name: Clean up old Windows installers
+        run: |
+          ssh -p ${{ secrets.DEPLOY_PORT || '2222' }} root@${{ secrets.DEPLOY_HOST || '2.25.206.232' }} "rm -f /var/www/infovibex.com/downloads/workplace-manager-setup.exe"

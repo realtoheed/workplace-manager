@@ -1,0 +1,16 @@
+{
+  "version": "1.0.24",
+  "build": 1,
+  "releaseDate": "2026-06-25",
+  "downloads": {
+    "windows": {
+      "zip": "https://infovibex.com/downloads/workplace-manager-1.0.24.zip",
+      "msix": "https://infovibex.com/downloads/workplace-manager-1.0.24.msix"
+    },
+    "linux": {
+      "deb": "https://infovibex.com/downloads/workplace-manager-1.0.24.deb",
+      "tar": "https://infovibex.com/downloads/workplace-manager-1.0.24.tar.gz"
+    }
+  },
+  "changelog": "MSIX packaging replaces Inno Setup for Windows (avoids Defender false positives)."
+}

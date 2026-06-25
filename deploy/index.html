@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Workplace Manager — Downloads</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; background: #0f0f13; color: #e4e4e7; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 2rem; }
+    .container { max-width: 680px; width: 100%; }
+    h1 { font-size: 1.75rem; font-weight: 700; margin-bottom: 0.5rem; }
+    p.sub { color: #a1a1aa; margin-bottom: 2rem; }
+    .card { background: #1a1a22; border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem; border: 1px solid #27272a; }
+    .card h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: 0.25rem; }
+    .card p { font-size: 0.875rem; color: #a1a1aa; margin-bottom: 1rem; }
+    .row { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+    .btn { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.625rem 1.25rem; border-radius: 8px; font-size: 0.875rem; font-weight: 500; text-decoration: none; transition: background 0.15s; }
+    .btn-primary { background: #6366f1; color: #fff; }
+    .btn-primary:hover { background: #4f46e5; }
+    .btn-secondary { background: #27272a; color: #e4e4e7; }
+    .btn-secondary:hover { background: #3f3f46; }
+    .badge { display: inline-block; font-size: 0.7rem; font-weight: 600; padding: 0.15rem 0.5rem; border-radius: 4px; background: #22c55e; color: #052e16; margin-left: 0.5rem; vertical-align: middle; }
+    .muted { font-size: 0.8rem; color: #71717a; margin-top: 1.5rem; }
+    a { color: #818cf8; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Workplace Manager v1.0.24</h1>
+    <p class="sub">Professional team collaboration platform for Windows and Linux.</p>
+
+    <div class="card">
+      <h2>Windows <span class="badge">Recommended</span></h2>
+      <p>MSIX package — modern sideloaded installer with lower false-positive rate.</p>
+      <div class="row">
+        <a class="btn btn-primary" href="/downloads/workplace-manager-1.0.24.msix">Download MSIX</a>
+        <a class="btn btn-secondary" href="/downloads/workplace-manager-1.0.24.zip">Portable ZIP</a>
+      </div>
+      <p style="margin-top:0.75rem;font-size:0.8rem;color:#71717a;">
+        <strong>First time?</strong> After installing the MSIX, open a terminal as Administrator and run:<br />
+        <code style="background:#27272a;padding:0.1rem 0.4rem;border-radius:4px;font-size:0.75rem;">certutil -addStore TrustedPeople "C:\Path\To\workplace_manager.cer"</code>
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>Linux</h2>
+      <p>Debian package or portable tarball for any distro.</p>
+      <div class="row">
+        <a class="btn btn-secondary" href="/downloads/workplace-manager-1.0.24.deb">Download .deb</a>
+        <a class="btn btn-secondary" href="/downloads/workplace-manager-1.0.24.tar.gz">Download .tar.gz</a>
+      </div>
+    </div>
+
+    <p class="muted">
+      Changelog: MSIX packaging replaces Inno Setup for Windows (avoids Defender false positives).
+      <a href="https://github.com/realtoheed/workplace-manager/releases">GitHub releases</a>
+    </p>
+  </div>
+</body>
+</html>
