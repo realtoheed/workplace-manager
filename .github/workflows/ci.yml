@@ -73,7 +73,7 @@ jobs:
         shell: pwsh
         working-directory: infovibe/desktop
         run: |
-          dart run msix:create --build false --install-certificate false
+          dart run msix:create
 
       - name: Upload MSIX artifact
         uses: actions/upload-artifact@v4

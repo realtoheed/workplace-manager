@@ -33,6 +33,8 @@ msix_config:
   capabilities: internetClient, microphone, webcam
   restricted_capabilities: graphicsCapture
   install_experiences: restricted
+  build_windows: false
+  install_certificate: false
 
 flutter:
   uses-material-design: true
