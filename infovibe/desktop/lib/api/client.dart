@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show SocketException;
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -10,6 +12,7 @@ class ApiClient {
   }
 
   static const Duration _timeout = Duration(seconds: 15);
+  static const int _maxRetries = 3;
 
   final http.Client _client = http.Client();
 
@@ -63,17 +66,41 @@ class ApiClient {
   Future<Map<String, dynamic>> _request(
     Future<http.Response> Function() requestFn,
   ) async {
-    final response = await requestFn().timeout(_timeout);
-    _saveCookies(response);
-    if (response.statusCode >= 200 && response.statusCode < 300) {
-      return response.body.isNotEmpty ? jsonDecode(response.body) : {};
+    int attempt = 0;
+    while (true) {
+      attempt++;
+      try {
+        final response = await requestFn().timeout(_timeout);
+        _saveCookies(response);
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          return response.body.isNotEmpty ? jsonDecode(response.body) : {};
+        }
+        if (response.statusCode == 401) {
+          await clearCookies();
+          onAuthExpired?.call();
+        }
+        final body = response.body.isNotEmpty ? jsonDecode(response.body) : {};
+        throw ApiException(response.statusCode, body['error']?.toString() ?? 'Request failed');
+      } on TimeoutException {
+        if (attempt < _maxRetries) {
+          await Future.delayed(Duration(seconds: attempt * 2));
+          continue;
+        }
+        throw ApiException(0, 'Request timed out. Please check your connection.');
+      } on SocketException {
+        if (attempt < _maxRetries) {
+          await Future.delayed(Duration(seconds: attempt * 2));
+          continue;
+        }
+        throw ApiException(0, 'Unable to reach server. Check your internet connection and try again.');
+      } on http.ClientException {
+        if (attempt < _maxRetries) {
+          await Future.delayed(Duration(seconds: attempt * 2));
+          continue;
+        }
+        throw ApiException(0, 'Connection failed. Please check your internet connection.');
+      }
     }
-    if (response.statusCode == 401) {
-      await clearCookies();
-      onAuthExpired?.call();
-    }
-    final body = response.body.isNotEmpty ? jsonDecode(response.body) : {};
-    throw ApiException(response.statusCode, body['error']?.toString() ?? 'Request failed');
   }
 
   Future<Map<String, dynamic>> get(String path, {Map<String, String>? query}) async {
