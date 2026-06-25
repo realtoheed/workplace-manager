@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart' show desktopCapturer, SourceType;
 import 'package:http/http.dart' as http;
 import 'package:livekit_client/livekit_client.dart' as lk;
 import 'socket.dart';
@@ -289,7 +290,11 @@ class LiveKitService {
     try {
       debugPrint('[LiveKit] Setting mic enabled: $enabled');
       await _room!.localParticipant!.setMicrophoneEnabled(enabled).timeout(const Duration(seconds: 5));
-      isMuted.value = !enabled;
+      for (int i = 0; i < 30; i++) {
+        await Future.delayed(const Duration(milliseconds: 100));
+        _syncLocalTrackState();
+        if (isMuted.value == !enabled) break;
+      }
       _socket.emit('participant-update', {'isAudioEnabled': enabled});
       _updateParticipants();
       debugPrint('[LiveKit] Mic ${enabled ? "enabled" : "disabled"} (isMuted=${isMuted.value})');
@@ -392,7 +397,30 @@ class LiveKitService {
         screenShareTrack.value = null;
         isScreenSharing.value = false;
       } else {
-        await _room!.localParticipant!.setScreenShareEnabled(true).timeout(const Duration(seconds: 15));
+        // Pre-check: try to enumerate desktop sources via DesktopCapturer
+        String? sourceId;
+        try {
+          final sources = await desktopCapturer
+              .getSources(types: [SourceType.screen, SourceType.window])
+              .timeout(const Duration(seconds: 3));
+          if (sources.isNotEmpty) {
+            sourceId = sources.first.id;
+            debugPrint('[LiveKit] Desktop sources available, pre-selected: ${sources.first.name}');
+          } else {
+            debugPrint('[LiveKit] No desktop sources returned by DesktopCapturer');
+          }
+        } catch (e) {
+          debugPrint('[LiveKit] DesktopCapturer pre-check failed: $e');
+        }
+
+        if (sourceId != null) {
+          await _room!.localParticipant!.setScreenShareEnabled(
+            true,
+            screenShareCaptureOptions: lk.ScreenShareCaptureOptions(sourceId: sourceId),
+          ).timeout(const Duration(seconds: 15));
+        } else {
+          await _room!.localParticipant!.setScreenShareEnabled(true).timeout(const Duration(seconds: 15));
+        }
         // Wait for screen share track to appear (max 5s)
         for (int i = 0; i < 50; i++) {
           await Future.delayed(const Duration(milliseconds: 100));
@@ -412,8 +440,12 @@ class LiveKitService {
     } catch (e) {
       final errorMsg = e.toString();
       debugPrint('[LiveKit] Screen share failed: $errorMsg');
-      if (errorMsg.contains('cancel') || errorMsg.contains('abort')) {
+      if (errorMsg.contains('cancel') || errorMsg.contains('abort') || errorMsg.contains('cancelled')) {
         lastError = 'Screen share cancelled';
+      } else if (errorMsg.contains('getDisplayMedia') || errorMsg.contains('source not found')) {
+        lastError = 'Screen capture not available on this system.\n'
+            'This can happen when running in a Remote Desktop (RDP) session, a VM, or when graphics drivers are missing.\n'
+            'Please try running directly on your local Windows desktop.';
       } else {
         lastError = 'Screen share failed: $errorMsg';
       }

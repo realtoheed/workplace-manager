@@ -15,7 +15,7 @@ import 'screens/dashboard_layout.dart';
 
 const String kApiBaseUrl = 'https://app.infovibex.com/api';
 const String kSocketUrl = 'https://app.infovibex.com';
-const String kAppVersion = '1.0.22';
+const String kAppVersion = '1.0.23';
 
 class _CloseListener with WindowListener {
   @override
