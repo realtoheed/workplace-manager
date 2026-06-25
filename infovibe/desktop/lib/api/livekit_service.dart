@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_webrtc/flutter_webrtc.dart' show desktopCapturer, SourceType;
 import 'package:http/http.dart' as http;
 import 'package:livekit_client/livekit_client.dart' as lk;
 import 'socket.dart';
@@ -397,30 +396,7 @@ class LiveKitService {
         screenShareTrack.value = null;
         isScreenSharing.value = false;
       } else {
-        // Pre-check: try to enumerate desktop sources via DesktopCapturer
-        String? sourceId;
-        try {
-          final sources = await desktopCapturer
-              .getSources(types: [SourceType.Screen, SourceType.Window])
-              .timeout(const Duration(seconds: 3));
-          if (sources.isNotEmpty) {
-            sourceId = sources.first.id;
-            debugPrint('[LiveKit] Desktop sources available, pre-selected: ${sources.first.name}');
-          } else {
-            debugPrint('[LiveKit] No desktop sources returned by DesktopCapturer');
-          }
-        } catch (e) {
-          debugPrint('[LiveKit] DesktopCapturer pre-check failed: $e');
-        }
-
-        if (sourceId != null) {
-          await _room!.localParticipant!.setScreenShareEnabled(
-            true,
-            screenShareCaptureOptions: lk.ScreenShareCaptureOptions(sourceId: sourceId),
-          ).timeout(const Duration(seconds: 15));
-        } else {
-          await _room!.localParticipant!.setScreenShareEnabled(true).timeout(const Duration(seconds: 15));
-        }
+        await _room!.localParticipant!.setScreenShareEnabled(true).timeout(const Duration(seconds: 15));
         // Wait for screen share track to appear (max 5s)
         for (int i = 0; i < 50; i++) {
           await Future.delayed(const Duration(milliseconds: 100));
