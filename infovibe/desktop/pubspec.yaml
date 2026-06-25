@@ -22,6 +22,16 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  msix: ^3.17.0
+
+msix_config:
+  display_name: Workplace Manager
+  publisher_display_name: Infovibex
+  identity_name: infovibex.workplace-manager
+  msix_version: 1.0.24.0
+  logo_path: assets/icon/app_icon_source.png
+  capabilities: internetClient, microphone, webcam, graphicsCapture
+  install_experiences: restricted
 
 flutter:
   uses-material-design: true
