@@ -189,11 +189,12 @@ class UpdateService {
 
   Future<void> _windowsUpdate(UpdateInfo info) async {
     final win = info.downloads['windows'] as Map<String, dynamic>?;
-    final url = win?['exe'] as String?;
+    final url = win?['zip'] as String?;
     if (url == null) throw Exception('No Windows download URL found');
 
     final tempDir = Directory.systemTemp.path;
-    final installerPath = '$tempDir\\workplace-manager-setup.exe';
+    final zipPath = '$tempDir\\workplace-manager-update.zip';
+    final extractDir = '$tempDir\\workplace-manager-update';
 
     progress.value = UpdateProgress(0, 'Downloading update...');
 
@@ -204,7 +205,7 @@ class UpdateService {
       final total = response.contentLength ?? 0;
       if (total == 0) throw Exception('Empty response');
 
-      final sink = File(installerPath).openWrite();
+      final sink = File(zipPath).openWrite();
       int received = 0;
 
       await for (final chunk in response.stream) {
@@ -222,17 +223,63 @@ class UpdateService {
       client.close();
     }
 
+    progress.value = UpdateProgress(0.9, 'Extracting update...');
+
+    await Process.run('powershell', [
+      '-Command',
+      'Expand-Archive',
+      '-Path',
+      '"$zipPath"',
+      '-DestinationPath',
+      '"$extractDir"',
+      '-Force',
+    ]);
+
     progress.value = UpdateProgress(0.95, 'Installing update...');
 
-    final result = await Process.run(installerPath, [
-      '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART',
-      '/LOG=${tempDir}\\workplace-update-log.txt',
-    ]);
-    if (result.exitCode != 0) {
-      throw Exception('Installer failed with exit code ${result.exitCode}');
+    final execPath = Platform.resolvedExecutable;
+    final appDir = File(execPath).parent.path;
+    final newExePath = '$extractDir\\workplace_manager.exe';
+    if (!File(newExePath).existsSync()) {
+      throw Exception('Update archive does not contain workplace_manager.exe');
     }
 
+    // Create updater batch script that: waits for this process to exit,
+    // copies new files over current app directory, then restarts.
+    final pid = Process.currentPid;
+    final batContent = '''
+@echo off
+setlocal
+set "OLD_PID=$pid"
+set "APP_DIR=$appDir"
+set "SRC_DIR=$extractDir"
+set "LOG=$tempDir\\workplace-update-log.txt"
+
+echo [updater] Waiting for process %OLD_PID% to exit... >> "%LOG%"
+:waitloop
+tasklist /FI "PID eq %OLD_PID%" 2>nul | find /I "%OLD_PID%" >nul
+if not errorlevel 1 (
+  timeout /t 1 /nobreak >nul
+  goto :waitloop
+)
+
+echo [updater] Copying files from %SRC_DIR% to %APP_DIR%... >> "%LOG%"
+xcopy /E /Y /Q "%SRC_DIR%\\*" "%APP_DIR%\\" >> "%LOG%" 2>&1
+
+echo [updater] Launching %APP_DIR%\\workplace_manager.exe >> "%LOG%"
+start "" "%APP_DIR%\\workplace_manager.exe"
+echo [updater] Done >> "%LOG%"
+exit /b 0
+''';
+
+    final batPath = '$tempDir\\workplace-updater.bat';
+    await File(batPath).writeAsString(batContent);
+
     progress.value = UpdateProgress(1.0, 'Update ready. Restarting...');
+
+    // Launch updater asynchronously, then exit immediately so the
+    // batch script can wait for this process to terminate.
+    await Process.start(batPath, []);
     await Future.delayed(const Duration(milliseconds: 200));
     exit(0);
   }

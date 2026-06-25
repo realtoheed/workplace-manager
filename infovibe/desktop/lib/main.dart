@@ -15,7 +15,7 @@ import 'screens/dashboard_layout.dart';
 
 const String kApiBaseUrl = 'https://app.infovibex.com/api';
 const String kSocketUrl = 'https://app.infovibex.com';
-const String kAppVersion = '1.0.14';
+const String kAppVersion = '1.0.21';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -31,7 +31,10 @@ void main() async {
   await windowManager.setMinimumSize(const Size(1024, 720));
   await windowManager.setSize(const Size(1200, 900));
   await windowManager.setTitle('Workplace Manager');
-  await windowManager.setPreventClose(true);
+  windowManager.onWindowClose.listen((_) async {
+    LiveKitService().dispose();
+    await windowManager.destroy();
+  });
   ApiClient().setBaseUrl(kApiBaseUrl);
   SocketService().setServerUrl(kSocketUrl);
   await LiveKitService().initialize();

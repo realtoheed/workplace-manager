@@ -98,7 +98,17 @@ class _MeetingWindowState extends State<MeetingWindow> with TickerProviderStateM
   void initState() {
     super.initState();
     _deviceSub = lk.Hardware.instance.onDeviceChange.stream.listen(_loadDevices);
+    _loadInitialDevices();
     _joinMeeting();
+  }
+
+  Future<void> _loadInitialDevices() async {
+    try {
+      final devices = await lk.Hardware.instance.enumerateDevices();
+      _loadDevices(devices);
+    } catch (e) {
+      debugPrint('[Meeting] Failed to enumerate devices: $e');
+    }
   }
 
   @override

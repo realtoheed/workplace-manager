@@ -45,7 +45,17 @@ class _PrejoinScreenState extends State<PrejoinScreen> {
     super.initState();
     _lk.localVideoTrack.addListener(_onLocalVideoTrack);
     _deviceSub = lk.Hardware.instance.onDeviceChange.stream.listen(_loadDevices);
+    _loadInitialDevices();
     WidgetsBinding.instance.addPostFrameCallback((_) => _boot());
+  }
+
+  Future<void> _loadInitialDevices() async {
+    try {
+      final devices = await lk.Hardware.instance.enumerateDevices();
+      _loadDevices(devices);
+    } catch (e) {
+      debugPrint('[Prejoin] Failed to enumerate devices: $e');
+    }
   }
 
   Future<void> _boot() async {

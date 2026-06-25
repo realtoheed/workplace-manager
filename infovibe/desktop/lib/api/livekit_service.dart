@@ -278,15 +278,36 @@ class LiveKitService {
   }
 
   Future<void> setMicEnabled(bool enabled) async {
-    if (_micOperationInProgress || _room?.localParticipant == null) return;
+    if (_micOperationInProgress || _room?.localParticipant == null) {
+      if (_room?.localParticipant == null) {
+        lastError = 'Not connected to meeting';
+      }
+      return;
+    }
     _micOperationInProgress = true;
+    lastError = null;
     try {
+      debugPrint('[LiveKit] Setting mic enabled: $enabled');
       await _room!.localParticipant!.setMicrophoneEnabled(enabled).timeout(const Duration(seconds: 5));
       isMuted.value = !enabled;
       _socket.emit('participant-update', {'isAudioEnabled': enabled});
       _updateParticipants();
+      debugPrint('[LiveKit] Mic ${enabled ? "enabled" : "disabled"} (isMuted=${isMuted.value})');
+    } on TimeoutException {
+      lastError = 'Mic operation timed out. Please try again.';
+      debugPrint('[LiveKit] setMicEnabled timed out');
     } catch (e) {
-      debugPrint('[LiveKit] setMicEnabled failed: $e');
+      final errorMsg = e.toString();
+      debugPrint('[LiveKit] setMicEnabled failed: $errorMsg');
+      if (errorMsg.contains('Permission') || errorMsg.contains('permission')) {
+        lastError = 'Microphone permission denied. Please check your system settings.';
+      } else if (errorMsg.contains('device') || errorMsg.contains('Device')) {
+        lastError = 'No microphone device found or device not accessible.';
+      } else if (errorMsg.contains('TrackCreateException') || errorMsg.contains('Failed to create stream')) {
+        lastError = 'No microphone found or mic not available. Please check your device.';
+      } else {
+        lastError = 'Failed to toggle mic: $errorMsg';
+      }
     } finally {
       _micOperationInProgress = false;
     }
@@ -323,6 +344,8 @@ class LiveKitService {
         lastError = 'Camera permission denied. Please check your system settings.';
       } else if (errorMsg.contains('device') || errorMsg.contains('Device')) {
         lastError = 'No camera device found or device not accessible.';
+      } else if (errorMsg.contains('TrackCreateException') || errorMsg.contains('Failed to create stream')) {
+        lastError = 'No camera found or camera not available. Please check your device.';
       } else {
         lastError = 'Failed to toggle camera: $errorMsg';
       }
