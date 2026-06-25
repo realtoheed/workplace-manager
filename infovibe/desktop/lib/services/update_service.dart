@@ -199,11 +199,12 @@ class UpdateService {
     progress.value = UpdateProgress(0, 'Downloading update...');
 
     final client = http.Client();
+    int? total;
+    int received = 0;
     try {
       final request = http.Request('GET', Uri.parse(url));
       final response = await client.send(request);
-      final total = response.contentLength;  // null for chunked encoding
-      int received = 0;
+      total = response.contentLength;  // null for chunked encoding
 
       if (total == 0) throw Exception('Empty response');
 

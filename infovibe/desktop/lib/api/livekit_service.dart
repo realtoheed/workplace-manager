@@ -401,7 +401,7 @@ class LiveKitService {
         String? sourceId;
         try {
           final sources = await desktopCapturer
-              .getSources(types: [SourceType.screen, SourceType.window])
+              .getSources(types: [SourceType.Screen, SourceType.Window])
               .timeout(const Duration(seconds: 3));
           if (sources.isNotEmpty) {
             sourceId = sources.first.id;
