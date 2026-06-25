@@ -246,7 +246,7 @@ class UpdateService {
 
     // Create updater batch script that: waits for this process to exit,
     // copies new files over current app directory, then restarts.
-    final pid = Process.currentPid;
+    final pid = await _getCurrentPid();
     final batContent = '''
 @echo off
 setlocal
@@ -420,6 +420,21 @@ echo "[updater] Done" >> "$LOG"
     }
     await Future.delayed(const Duration(milliseconds: 200));
     exit(0);
+  }
+
+  Future<int> _getCurrentPid() async {
+    if (Platform.isWindows) {
+      try {
+        final result = await Process.run('powershell', ['-Command', '[Diagnostics.Process]::GetCurrentProcess().Id']);
+        if (result.exitCode == 0) return int.tryParse(result.stdout.toString().trim()) ?? 0;
+      } catch (_) {}
+      return 0;
+    }
+    try {
+      final result = await Process.run('sh', ['-c', 'echo $PPID']);
+      if (result.exitCode == 0) return int.tryParse(result.stdout.toString().trim()) ?? 0;
+    } catch (_) {}
+    return 0;
   }
 
   ScaffoldMessengerState? _scaffoldMessenger;

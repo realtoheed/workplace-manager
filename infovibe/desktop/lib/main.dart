@@ -17,6 +17,14 @@ const String kApiBaseUrl = 'https://app.infovibex.com/api';
 const String kSocketUrl = 'https://app.infovibex.com';
 const String kAppVersion = '1.0.21';
 
+class _CloseListener with WindowListener {
+  @override
+  void onWindowClose() {
+    LiveKitService().dispose();
+    windowManager.destroy();
+  }
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   FlutterError.onError = (details) {
@@ -31,10 +39,7 @@ void main() async {
   await windowManager.setMinimumSize(const Size(1024, 720));
   await windowManager.setSize(const Size(1200, 900));
   await windowManager.setTitle('Workplace Manager');
-  windowManager.onWindowClose.listen((_) async {
-    LiveKitService().dispose();
-    await windowManager.destroy();
-  });
+  windowManager.addListener(_CloseListener());
   ApiClient().setBaseUrl(kApiBaseUrl);
   SocketService().setServerUrl(kSocketUrl);
   await LiveKitService().initialize();
