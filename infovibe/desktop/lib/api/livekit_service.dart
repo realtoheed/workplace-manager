@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:livekit_client/livekit_client.dart' as lk;
+import 'screen_sharer.dart';
 import 'socket.dart';
 
 class LiveKitService {
@@ -396,7 +397,12 @@ class LiveKitService {
         screenShareTrack.value = null;
         isScreenSharing.value = false;
       } else {
-        await _room!.localParticipant!.setScreenShareEnabled(true).timeout(const Duration(seconds: 15));
+        final sharer = ScreenSharer();
+        final error = await sharer.startScreenShare(_room!.localParticipant!);
+        if (error != null) {
+          lastError = error;
+          return error;
+        }
         // Wait for screen share track to appear (max 5s)
         for (int i = 0; i < 50; i++) {
           await Future.delayed(const Duration(milliseconds: 100));
@@ -409,22 +415,9 @@ class LiveKitService {
       if (!willBeSharing || isScreenSharing.value) return null;
       lastError = 'Screen share source not selected or timed out';
       return lastError;
-    } on TimeoutException {
-      lastError = 'Screen share timed out. Please try again.';
-      debugPrint('[LiveKit] Screen share timed out');
-      return lastError;
     } catch (e) {
-      final errorMsg = e.toString();
-      debugPrint('[LiveKit] Screen share failed: $errorMsg');
-      if (errorMsg.contains('cancel') || errorMsg.contains('abort') || errorMsg.contains('cancelled')) {
-        lastError = 'Screen share cancelled';
-      } else if (errorMsg.contains('getDisplayMedia') || errorMsg.contains('source not found')) {
-        lastError = 'Screen capture not available on this system.\n'
-            'This can happen when running in a Remote Desktop (RDP) session, a VM, or when graphics drivers are missing.\n'
-            'Please try running directly on your local Windows desktop.';
-      } else {
-        lastError = 'Screen share failed: $errorMsg';
-      }
+      lastError = 'Screen share failed: $e';
+      debugPrint('[LiveKit] Screen share error: $e');
       return lastError;
     }
   }
