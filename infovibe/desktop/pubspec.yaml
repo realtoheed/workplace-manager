@@ -29,7 +29,7 @@ msix_config:
   publisher_display_name: Infovibex
   identity_name: infovibex.workplace-manager
   msix_version: 1.0.24.0
-  logo_path: assets/icon/app_icon_source.png
+  logo_path: assets/icon/app_icon.png
   capabilities: internetClient, microphone, webcam, graphicsCapture
   install_experiences: restricted
 
