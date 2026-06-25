@@ -202,28 +202,38 @@ class UpdateService {
     try {
       final request = http.Request('GET', Uri.parse(url));
       final response = await client.send(request);
-      final total = response.contentLength ?? 0;
+      final total = response.contentLength;  // null for chunked encoding
+      int received = 0;
+
       if (total == 0) throw Exception('Empty response');
 
       final sink = File(zipPath).openWrite();
-      int received = 0;
 
       await for (final chunk in response.stream) {
         sink.add(chunk);
         received += chunk.length;
-        if (total > 0) {
+        if (total != null && total > 0) {
           progress.value = UpdateProgress(
             received / total,
             'Downloading... ${(received / 1024 / 1024).toStringAsFixed(1)}MB / ${(total / 1024 / 1024).toStringAsFixed(1)}MB',
           );
+        } else {
+          progress.value = UpdateProgress(
+            0,
+            'Downloading... ${(received / 1024 / 1024).toStringAsFixed(1)}MB',
+          );
         }
       }
       await sink.close();
+      if (received == 0) throw Exception('Empty response');
     } finally {
       client.close();
     }
 
-    progress.value = UpdateProgress(0.9, 'Extracting update...');
+    // Handle chunked downloads where content-length wasn't known upfront
+    if (total == null || total == 0) {
+      progress.value = UpdateProgress(0.9, 'Downloaded ${(received / 1024 / 1024).toStringAsFixed(1)}MB. Extracting...');
+    }
 
     await Process.run('powershell', [
       '-Command',
@@ -311,23 +321,30 @@ exit /b 0
     try {
       final request = http.Request('GET', Uri.parse(url));
       final response = await client.send(request);
-      final total = response.contentLength ?? 0;
+      final total = response.contentLength;  // null for chunked encoding
+      int received = 0;
+
       if (total == 0) throw Exception('Empty response');
 
       final sink = File(archivePath).openWrite();
-      int received = 0;
 
       await for (final chunk in response.stream) {
         sink.add(chunk);
         received += chunk.length;
-        if (total > 0) {
+        if (total != null && total > 0) {
           progress.value = UpdateProgress(
             received / total,
             'Downloading... ${(received / 1024 / 1024).toStringAsFixed(1)}MB / ${(total / 1024 / 1024).toStringAsFixed(1)}MB',
           );
+        } else {
+          progress.value = UpdateProgress(
+            0,
+            'Downloading... ${(received / 1024 / 1024).toStringAsFixed(1)}MB',
+          );
         }
       }
       await sink.close();
+      if (received == 0) throw Exception('Empty response');
     } finally {
       client.close();
     }
