@@ -75,11 +75,21 @@ jobs:
         run: |
           dart run msix:create
 
+      - name: Copy MSIX to cert directory
+        shell: pwsh
+        working-directory: infovibe/desktop
+        run: |
+          New-Item -ItemType Directory -Force -Path build\windows\msix
+          Copy-Item "build\windows\x64\runner\Release\workplace_manager.msix" "build\windows\msix\workplace_manager.msix"
+          if (Test-Path "build\windows\x64\runner\Release\*.pfx") {
+            Copy-Item "build\windows\x64\runner\Release\*.pfx" "build\windows\msix\"
+          }
+
       - name: Upload MSIX artifact
         uses: actions/upload-artifact@v4
         with:
           name: workplace-manager-msix
-          path: infovibe/desktop/build/windows/msix/*.msix
+          path: infovibe/desktop/build/windows/msix/workplace_manager.msix
 
       - name: Upload MSIX certificate
         uses: actions/upload-artifact@v4
