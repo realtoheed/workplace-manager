@@ -100,9 +100,10 @@ jobs:
 
       - name: Deploy to server
         env:
-          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          HOST: ${{ secrets.DEPLOY_HOST || '2.25.206.232' }}
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          HOST: ${{ secrets.SERVER_HOST || '2.25.206.232' }}
           PORT: ${{ secrets.DEPLOY_PORT || '2222' }}
+          SSH_USER: ${{ secrets.SERVER_USER || 'root' }}
         run: |
           if [ -z "$SSH_KEY" ]; then
             echo "DEPLOY_SSH_KEY secret not set — skipping deploy"
@@ -114,19 +115,19 @@ jobs:
           ssh-keyscan -p "$PORT" "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
           echo "→ Creating remote directories"
-          ssh -p "$PORT" root@"$HOST" "mkdir -p /var/www/infovibex.com/downloads"
+          ssh -p "$PORT" "$SSH_USER"@"$HOST" "mkdir -p /var/www/infovibex.com/downloads"
 
           echo "→ Deploying Windows portable ZIP"
-          scp -P "$PORT" deploy-files/workplace-manager-1.0.25.zip root@"$HOST":/var/www/infovibex.com/downloads/workplace-manager-1.0.25.zip
+          scp -P "$PORT" deploy-files/workplace-manager-1.0.25.zip "$SSH_USER"@"$HOST":/var/www/infovibex.com/downloads/workplace-manager-1.0.25.zip
 
           echo "→ Removing old Windows ZIP"
-          ssh -p "$PORT" root@"$HOST" "rm -f /var/www/infovibex.com/downloads/workplace-manager-1.0.24.zip"
+          ssh -p "$PORT" "$SSH_USER"@"$HOST" "rm -f /var/www/infovibex.com/downloads/workplace-manager-1.0.24.zip"
 
           echo "→ Deploying version.json"
-          scp -P "$PORT" deploy-files/version.json root@"$HOST":/var/www/infovibex.com/version.json
+          scp -P "$PORT" deploy-files/version.json "$SSH_USER"@"$HOST":/var/www/infovibex.com/version.json
 
           echo "→ Downloading current index.html from server"
-          scp -P "$PORT" root@"$HOST":/var/www/infovibex.com/index.html deploy-files/index.html
+          scp -P "$PORT" "$SSH_USER"@"$HOST":/var/www/infovibex.com/index.html deploy-files/index.html
 
           echo "→ Patching index.html"
           sed -i 's/v1\.0\.24/v1.0.25/g; s/workplace-manager-1\.0\.24\.zip/workplace-manager-1.0.25.zip/g; s/workplace-manager_1\.0\.24_amd64\.deb/workplace-manager_1.0.25_amd64.deb/g' deploy-files/index.html
@@ -134,9 +135,9 @@ jobs:
           python3 -c "import re; html = open('deploy-files/index.html').read(); html = re.sub(r'<div class=changelog>.*?</div>', '<div class=changelog>\n<h3>v1.0.25 Changelog</h3>\n<ul>\n<li>Fixed: Windows screen share — falls back to DesktopCapturer when OS picker fails (RDP/VM fix)</li>\n<li>Fixed: Participant names now show display name instead of UUID</li>\n<li>Fixed: Mic toggle reliability improved with extended polling</li>\n<li>Bumped version to 1.0.25</li>\n</ul>\n</div>', html, flags=re.DOTALL); open('deploy-files/index.html', 'w').write(html)"
 
           echo "→ Deploying updated index.html"
-          scp -P "$PORT" deploy-files/index.html root@"$HOST":/var/www/infovibex.com/index.html
+          scp -P "$PORT" deploy-files/index.html "$SSH_USER"@"$HOST":/var/www/infovibex.com/index.html
 
           echo "→ Setting permissions"
-          ssh -p "$PORT" root@"$HOST" "chown -R www-data:www-data /var/www/infovibex.com/downloads /var/www/infovibex.com/version.json /var/www/infovibex.com/index.html"
+          ssh -p "$PORT" "$SSH_USER"@"$HOST" "chown -R www-data:www-data /var/www/infovibex.com/downloads /var/www/infovibex.com/version.json /var/www/infovibex.com/index.html"
 
           echo "✓ Deploy complete"
