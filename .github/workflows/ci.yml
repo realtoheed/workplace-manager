@@ -112,22 +112,24 @@ jobs:
           mkdir -p ~/.ssh
           echo "$SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -p "$PORT" "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+          echo "→ Testing SSH connection"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 -p "$PORT" "$SSH_USER"@"$HOST" "echo 'SSH OK'" 2>&1
 
           echo "→ Creating remote directories"
-          ssh -p "$PORT" "$SSH_USER"@"$HOST" "mkdir -p /var/www/infovibex.com/downloads"
+          ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "$SSH_USER"@"$HOST" "mkdir -p /var/www/infovibex.com/downloads" 2>&1
 
           echo "→ Deploying Windows portable ZIP"
-          scp -P "$PORT" deploy-files/workplace-manager-1.0.25.zip "$SSH_USER"@"$HOST":/var/www/infovibex.com/downloads/workplace-manager-1.0.25.zip
+          scp -o StrictHostKeyChecking=accept-new -P "$PORT" deploy-files/workplace-manager-1.0.25.zip "$SSH_USER"@"$HOST":/var/www/infovibex.com/downloads/workplace-manager-1.0.25.zip 2>&1
 
           echo "→ Removing old Windows ZIP"
-          ssh -p "$PORT" "$SSH_USER"@"$HOST" "rm -f /var/www/infovibex.com/downloads/workplace-manager-1.0.24.zip"
+          ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "$SSH_USER"@"$HOST" "rm -f /var/www/infovibex.com/downloads/workplace-manager-1.0.24.zip" 2>&1
 
           echo "→ Deploying version.json"
-          scp -P "$PORT" deploy-files/version.json "$SSH_USER"@"$HOST":/var/www/infovibex.com/version.json
+          scp -o StrictHostKeyChecking=accept-new -P "$PORT" deploy-files/version.json "$SSH_USER"@"$HOST":/var/www/infovibex.com/version.json 2>&1
 
           echo "→ Downloading current index.html from server"
-          scp -P "$PORT" "$SSH_USER"@"$HOST":/var/www/infovibex.com/index.html deploy-files/index.html
+          scp -o StrictHostKeyChecking=accept-new -P "$PORT" "$SSH_USER"@"$HOST":/var/www/infovibex.com/index.html deploy-files/index.html 2>&1
 
           echo "→ Patching index.html"
           sed -i 's/v1\.0\.24/v1.0.25/g; s/workplace-manager-1\.0\.24\.zip/workplace-manager-1.0.25.zip/g; s/workplace-manager_1\.0\.24_amd64\.deb/workplace-manager_1.0.25_amd64.deb/g' deploy-files/index.html
@@ -135,9 +137,9 @@ jobs:
           python3 -c "import re; html = open('deploy-files/index.html').read(); html = re.sub(r'<div class=changelog>.*?</div>', '<div class=changelog>\n<h3>v1.0.25 Changelog</h3>\n<ul>\n<li>Fixed: Windows screen share — falls back to DesktopCapturer when OS picker fails (RDP/VM fix)</li>\n<li>Fixed: Participant names now show display name instead of UUID</li>\n<li>Fixed: Mic toggle reliability improved with extended polling</li>\n<li>Bumped version to 1.0.25</li>\n</ul>\n</div>', html, flags=re.DOTALL); open('deploy-files/index.html', 'w').write(html)"
 
           echo "→ Deploying updated index.html"
-          scp -P "$PORT" deploy-files/index.html "$SSH_USER"@"$HOST":/var/www/infovibex.com/index.html
+          scp -o StrictHostKeyChecking=accept-new -P "$PORT" deploy-files/index.html "$SSH_USER"@"$HOST":/var/www/infovibex.com/index.html 2>&1
 
           echo "→ Setting permissions"
-          ssh -p "$PORT" "$SSH_USER"@"$HOST" "chown -R www-data:www-data /var/www/infovibex.com/downloads /var/www/infovibex.com/version.json /var/www/infovibex.com/index.html"
+          ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "$SSH_USER"@"$HOST" "chown -R www-data:www-data /var/www/infovibex.com/downloads /var/www/infovibex.com/version.json /var/www/infovibex.com/index.html" 2>&1
 
           echo "✓ Deploy complete"
