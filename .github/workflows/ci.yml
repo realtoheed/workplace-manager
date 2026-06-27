@@ -102,7 +102,7 @@ jobs:
         env:
           SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
           HOST: ${{ secrets.SERVER_HOST || '2.25.206.232' }}
-          PORT: ${{ secrets.DEPLOY_PORT || '2222' }}
+          PORT: ${{ secrets.DEPLOY_PORT || '22' }}
           SSH_USER: ${{ secrets.SERVER_USER || 'root' }}
         run: |
           if [ -z "$SSH_KEY" ]; then
