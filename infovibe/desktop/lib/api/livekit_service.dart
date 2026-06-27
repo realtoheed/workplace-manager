@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:http/http.dart' as http;
 import 'package:livekit_client/livekit_client.dart' as lk;
 import 'screen_sharer.dart';
@@ -34,6 +35,7 @@ class LiveKitService {
   String? lastError;
   bool _micOperationInProgress = false;
   bool _cameraOperationInProgress = false;
+  bool _screenShareOperationInProgress = false;
   final Map<String, String> _participantNames = {};
 
   final VoidCallbacks onRoomConnected = VoidCallbacks();
@@ -386,12 +388,17 @@ class LiveKitService {
     }
   }
 
-  Future<String?> toggleScreenShare() async {
+  Future<String?> toggleScreenShare([BuildContext? context]) async {
     lastError = null;
     if (_room?.localParticipant == null) {
       lastError = 'Not connected to room';
       return lastError;
     }
+    if (_screenShareOperationInProgress) {
+      debugPrint('[LiveKit] Screen share operation already in progress');
+      return null;
+    }
+    _screenShareOperationInProgress = true;
     final willBeSharing = !isScreenSharing.value;
     try {
       debugPrint('[LiveKit] Screen share: ${willBeSharing ? "starting" : "stopping"}');
@@ -412,7 +419,7 @@ class LiveKitService {
         isScreenSharing.value = false;
       } else {
         final sharer = ScreenSharer();
-        final error = await sharer.startScreenShare(_room!.localParticipant!);
+        final error = await sharer.startScreenShare(_room!.localParticipant!, context);
         if (error != null) {
           lastError = error;
           return error;
@@ -433,6 +440,8 @@ class LiveKitService {
       lastError = 'Screen share failed: $e';
       debugPrint('[LiveKit] Screen share error: $e');
       return lastError;
+    } finally {
+      _screenShareOperationInProgress = false;
     }
   }
 
@@ -462,6 +471,7 @@ class LiveKitService {
     screenShareTrack.value = null;
     _micOperationInProgress = false;
     _cameraOperationInProgress = false;
+    _screenShareOperationInProgress = false;
   }
 
   void dispose() {

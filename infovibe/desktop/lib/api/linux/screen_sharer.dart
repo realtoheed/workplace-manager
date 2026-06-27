@@ -1,11 +1,12 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:livekit_client/livekit_client.dart' as lk;
 import '../screen_sharer.dart';
 
 class LinuxScreenSharer implements ScreenSharer {
   @override
-  Future<String?> startScreenShare(lk.LocalParticipant participant) async {
+  Future<String?> startScreenShare(lk.LocalParticipant participant, [BuildContext? context]) async {
     try {
       await participant.setScreenShareEnabled(true).timeout(const Duration(seconds: 15));
       return null;

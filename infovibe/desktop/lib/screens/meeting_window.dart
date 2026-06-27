@@ -311,7 +311,7 @@ class _MeetingWindowState extends State<MeetingWindow> with TickerProviderStateM
   }
 
   Future<void> _toggleScreenShare() async {
-    final error = await _lk.toggleScreenShare();
+    final error = await _lk.toggleScreenShare(context);
     if (!mounted || error == null) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error), backgroundColor: const Color(0xFFB91C1C)));
   }

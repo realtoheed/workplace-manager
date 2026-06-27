@@ -85,7 +85,7 @@ jobs:
       - name: Create portable ZIP
         run: |
           cd windows-build
-          zip -r "../workplace-manager-1.0.25.zip" ./*
+          zip -r "../workplace-manager-1.0.26.zip" ./*
           cd ..
 
       - name: Prepare deploy files
@@ -93,10 +93,10 @@ jobs:
           mkdir -p deploy-files
 
           echo "→ Generating version.json"
-          python3 -c "import json, datetime; data = {'version': '1.0.25', 'build': 26, 'releaseDate': datetime.date.today().isoformat(), 'downloads': {'linux': {'deb': 'https://infovibex.com/downloads/linux/workplace-manager_1.0.25_amd64.deb'}, 'windows': {'zip': 'https://infovibex.com/downloads/workplace-manager-1.0.25.zip'}}, 'changelog': '- Fixed: Windows screen share — falls back to DesktopCapturer when OS picker fails (RDP/VM fix)\n- Fixed: Participant names now show display name instead of UUID\n- Fixed: Mic toggle reliability improved with extended polling\n- Bumped version to 1.0.25'}; json.dump(data, open('deploy-files/version.json', 'w'), indent=4)"
+          python3 -c "import json, datetime; data = {'version': '1.0.26', 'build': 27, 'releaseDate': datetime.date.today().isoformat(), 'downloads': {'linux': {'deb': 'https://infovibex.com/downloads/linux/workplace-manager_1.0.26_amd64.deb'}, 'windows': {'zip': 'https://infovibex.com/downloads/workplace-manager-1.0.26.zip'}}, 'changelog': '- Fixed: Windows screen share — now shows a picker dialog with screen/window thumbnails via DesktopCapturer\n- Fixed: Multi-click crash on screen share button with operation guard\n- Bumped version to 1.0.26'}; json.dump(data, open('deploy-files/version.json', 'w'), indent=4)"
 
           echo "→ Moving ZIP to deploy-files"
-          cp workplace-manager-1.0.25.zip deploy-files/
+          cp workplace-manager-1.0.26.zip deploy-files/
 
       - name: Deploy to server
         env:
@@ -120,7 +120,7 @@ jobs:
           ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "$SSH_USER"@"$HOST" "mkdir -p /var/www/infovibex.com/downloads" 2>&1
 
           echo "→ Deploying Windows portable ZIP"
-          scp -o StrictHostKeyChecking=accept-new -P "$PORT" deploy-files/workplace-manager-1.0.25.zip "$SSH_USER"@"$HOST":/var/www/infovibex.com/downloads/workplace-manager-1.0.25.zip 2>&1
+          scp -o StrictHostKeyChecking=accept-new -P "$PORT" deploy-files/workplace-manager-1.0.26.zip "$SSH_USER"@"$HOST":/var/www/infovibex.com/downloads/workplace-manager-1.0.26.zip 2>&1
 
           echo "→ Removing old Windows ZIP"
           ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "$SSH_USER"@"$HOST" "rm -f /var/www/infovibex.com/downloads/workplace-manager-1.0.24.zip" 2>&1
@@ -132,9 +132,9 @@ jobs:
           scp -o StrictHostKeyChecking=accept-new -P "$PORT" "$SSH_USER"@"$HOST":/var/www/infovibex.com/index.html deploy-files/index.html 2>&1
 
           echo "→ Patching index.html"
-          sed -i 's/v1\.0\.24/v1.0.25/g; s/workplace-manager-1\.0\.24\.zip/workplace-manager-1.0.25.zip/g; s/workplace-manager_1\.0\.24_amd64\.deb/workplace-manager_1.0.25_amd64.deb/g' deploy-files/index.html
+          sed -i 's/v1\.0\.24/v1.0.26/g; s/workplace-manager-1\.0\.24\.zip/workplace-manager-1.0.26.zip/g; s/workplace-manager_1\.0\.24_amd64\.deb/workplace-manager_1.0.26_amd64.deb/g' deploy-files/index.html
 
-          python3 -c "import re; html = open('deploy-files/index.html').read(); html = re.sub(r'<div class=changelog>.*?</div>', '<div class=changelog>\n<h3>v1.0.25 Changelog</h3>\n<ul>\n<li>Fixed: Windows screen share — falls back to DesktopCapturer when OS picker fails (RDP/VM fix)</li>\n<li>Fixed: Participant names now show display name instead of UUID</li>\n<li>Fixed: Mic toggle reliability improved with extended polling</li>\n<li>Bumped version to 1.0.25</li>\n</ul>\n</div>', html, flags=re.DOTALL); open('deploy-files/index.html', 'w').write(html)"
+          python3 -c "import re; html = open('deploy-files/index.html').read(); html = re.sub(r'<div class=changelog>.*?</div>', '<div class=changelog>\n<h3>v1.0.26 Changelog</h3>\n<ul>\n<li>Fixed: Windows screen share — picker dialog with DesktopCapturer source selection</li>\n<li>Fixed: Multi-click crash on screen share button</li>\n<li>Bumped version to 1.0.26</li>\n</ul>\n</div>', html, flags=re.DOTALL); open('deploy-files/index.html', 'w').write(html)"
 
           echo "→ Deploying updated index.html"
           scp -o StrictHostKeyChecking=accept-new -P "$PORT" deploy-files/index.html "$SSH_USER"@"$HOST":/var/www/infovibex.com/index.html 2>&1
