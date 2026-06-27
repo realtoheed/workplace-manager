@@ -158,7 +158,23 @@ class _MeetingWindowState extends State<MeetingWindow> with TickerProviderStateM
       'meetingType': 'instant',
     });
 
-    _socketCleanups.add(_socket.on('joined-room', (_) => _connectLiveKit(user.id, user.name)));
+    _socketCleanups.add(_socket.on('joined-room', (data) {
+      if (data is Map) {
+        final existing = data['existingParticipants'];
+        if (existing is List) {
+          for (final p in existing) {
+            if (p is Map) {
+              final pid = p['id']?.toString();
+              final pname = p['name']?.toString();
+              if (pid != null && pname != null && pname.isNotEmpty) {
+                _lk.setParticipantName(pid, pname);
+              }
+            }
+          }
+        }
+      }
+      _connectLiveKit(user.id, user.name);
+    }));
     _socketCleanups.add(_socket.on('join-room-error', (error) {
       if (!mounted) return;
       setState(() {
@@ -168,6 +184,13 @@ class _MeetingWindowState extends State<MeetingWindow> with TickerProviderStateM
     }));
     _socketCleanups.add(_socket.on('chat-message', _receiveChatMessage));
     _socketCleanups.add(_socket.on('participant-joined', (data) {
+      if (data is Map) {
+        final pid = data['id']?.toString() ?? data['participantId']?.toString();
+        final name = data['name']?.toString();
+        if (pid != null && name != null && name.isNotEmpty) {
+          _lk.setParticipantName(pid, name);
+        }
+      }
       _softRefresh();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(

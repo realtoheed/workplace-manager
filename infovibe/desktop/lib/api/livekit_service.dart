@@ -34,6 +34,7 @@ class LiveKitService {
   String? lastError;
   bool _micOperationInProgress = false;
   bool _cameraOperationInProgress = false;
+  final Map<String, String> _participantNames = {};
 
   final VoidCallbacks onRoomConnected = VoidCallbacks();
   final VoidCallbacks onRoomDisconnected = VoidCallbacks();
@@ -228,6 +229,12 @@ class LiveKitService {
     participantCount.value = all.length;
   }
 
+  void setParticipantName(String identity, String name) {
+    if (name.isNotEmpty) {
+      _participantNames[identity] = name;
+    }
+  }
+
   Map<String, dynamic> _participantToMap(lk.Participant p, bool isLocal) {
     final activeSpeakers = _room?.activeSpeakers;
     bool screenSharing = false;
@@ -240,9 +247,11 @@ class LiveKitService {
       }
     }
     final audioPub = p.audioTrackPublications.isNotEmpty ? p.audioTrackPublications.first : null;
+    final savedName = _participantNames[p.identity];
+    final displayName = savedName ?? (p.name.isNotEmpty ? p.name : p.identity);
     return {
       'id': p.identity,
-      'name': p.name.isNotEmpty ? p.name : p.identity,
+      'name': displayName,
       'muted': audioPub?.muted ?? true,
       'videoOff': videoOff,
       'speaking': activeSpeakers?.contains(p) ?? false,
@@ -279,18 +288,21 @@ class LiveKitService {
   }
 
   Future<void> setMicEnabled(bool enabled) async {
-    if (_micOperationInProgress || _room?.localParticipant == null) {
-      if (_room?.localParticipant == null) {
-        lastError = 'Not connected to meeting';
-      }
+    if (_room?.localParticipant == null) {
+      lastError = 'Not connected to meeting';
       return;
+    }
+    if (_micOperationInProgress) {
+      debugPrint('[LiveKit] Mic operation already in progress, queueing retry');
+      await Future.delayed(const Duration(milliseconds: 500));
+      if (_micOperationInProgress) return;
     }
     _micOperationInProgress = true;
     lastError = null;
     try {
       debugPrint('[LiveKit] Setting mic enabled: $enabled');
-      await _room!.localParticipant!.setMicrophoneEnabled(enabled).timeout(const Duration(seconds: 5));
-      for (int i = 0; i < 30; i++) {
+      await _room!.localParticipant!.setMicrophoneEnabled(enabled).timeout(const Duration(seconds: 10));
+      for (int i = 0; i < 60; i++) {
         await Future.delayed(const Duration(milliseconds: 100));
         _syncLocalTrackState();
         if (isMuted.value == !enabled) break;
@@ -319,19 +331,21 @@ class LiveKitService {
   }
 
   Future<void> setCameraEnabled(bool enabled) async {
-    if (_cameraOperationInProgress || _room?.localParticipant == null) {
-      if (_room?.localParticipant == null) {
-        lastError = 'Not connected to meeting';
-      }
+    if (_room?.localParticipant == null) {
+      lastError = 'Not connected to meeting';
       return;
+    }
+    if (_cameraOperationInProgress) {
+      debugPrint('[LiveKit] Camera operation already in progress, queueing retry');
+      await Future.delayed(const Duration(milliseconds: 500));
+      if (_cameraOperationInProgress) return;
     }
     _cameraOperationInProgress = true;
     lastError = null;
     try {
       debugPrint('[LiveKit] Setting camera enabled: $enabled');
       await _room!.localParticipant!.setCameraEnabled(enabled).timeout(const Duration(seconds: 10));
-      // Wait for the track publication event to propagate (max 3s)
-      for (int i = 0; i < 30; i++) {
+      for (int i = 0; i < 60; i++) {
         await Future.delayed(const Duration(milliseconds: 100));
         _syncLocalTrackState();
         if (isVideoOff.value == !enabled) break;
